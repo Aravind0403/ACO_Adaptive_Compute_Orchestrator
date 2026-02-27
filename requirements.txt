@@ -1,0 +1,45 @@
+# ACO Adaptive Compute Scheduler — V2 Dependencies
+# ─────────────────────────────────────────────────
+# Install with: pip install -r requirements.txt
+#
+# Dependency rationale (why each one is here):
+#
+# Phase 1 (Schema layer):
+#   pydantic        → Data models, validation, serialisation
+#   annotated-types → Required by pydantic v2 for type annotations
+#
+# Phase 2 (ACO core):
+#   numpy           → Pheromone matrix (2D array), vectorised decay/deposit
+#
+# Phase 3 (Predictor):
+#   torch           → PyTorch LSTM for time-series CPU spike forecasting
+#   statsmodels     → Kept for future exponential smoothing comparison baseline
+#   scikit-learn    → Utility functions (normalisation, metrics)
+#
+# Phase 4-5 (Scheduler / API):
+#   fastapi         → REST API (control plane interface)
+#   uvicorn[standard] → ASGI server
+#   uvloop          → Drop-in asyncio replacement; 2-4x faster event loop
+#
+# Phase 7-9 (Telemetry / Observability):
+#   httpx           → Async HTTP client (node agent → orchestrator)
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+pydantic~=2.12.4
+annotated-types~=0.7.0
+
+# ── ACO Engine ────────────────────────────────────────────────────────────────
+numpy>=1.26.0
+
+# ── Prediction ────────────────────────────────────────────────────────────────
+torch>=2.2.0
+statsmodels>=0.14.0
+scikit-learn>=1.4.0
+
+# ── API & Async Runtime ───────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+uvloop>=0.19.0
+
+# ── Agent Communication ───────────────────────────────────────────────────────
+httpx>=0.27.0
