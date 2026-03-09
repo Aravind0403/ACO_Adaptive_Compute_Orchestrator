@@ -58,10 +58,13 @@ All effects are visible through orchestration_service:
 from __future__ import annotations
 
 import random
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 from orchestrator.shared.models import NodeArch, NodeTelemetry, PredictionResult
 from orchestrator.shared.telemetry import ResourceSample, WorkloadProfile
+
+if TYPE_CHECKING:
+    from orchestrator.telemetry.trace_adapter import AlibabaMachineTraceAdapter
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -145,7 +148,11 @@ class TelemetryCollector:
             collector.tick()   # call periodically (every 1s in V3)
     """
 
-    def __init__(self, orchestration_service: "OrchestratorService") -> None:  # type: ignore[name-defined]
+    def __init__(
+        self,
+        orchestration_service: "OrchestratorService",  # type: ignore[name-defined]
+        trace_adapter: Optional["AlibabaMachineTraceAdapter"] = None,
+    ) -> None:
         """
         Initialise the collector bound to an OrchestratorService instance.
 
@@ -153,8 +160,14 @@ class TelemetryCollector:
             orchestration_service: The live OrchestratorService. The collector
                                    holds a reference and mutates its state
                                    via update_node_telemetry() and _prediction_cache.
+            trace_adapter:         Optional AlibabaMachineTraceAdapter. When provided,
+                                   _generate_telemetry() replays real Alibaba cluster
+                                   trace data instead of random.gauss() noise.
+                                   inject_spike() continues to work in both modes.
+                                   Defaults to None (keeps original Gaussian path).
         """
         self._service = orchestration_service
+        self._trace_adapter = trace_adapter
         self._tick_count: int = 0
 
         # Per-node baseline CPU utilisations (mutable — inject_spike() overrides these)
@@ -251,16 +264,20 @@ class TelemetryCollector:
 
     def _generate_telemetry(self, node_id: str) -> NodeTelemetry:
         """
-        Generate a synthetic NodeTelemetry snapshot for one node.
+        Generate a NodeTelemetry snapshot for one node.
 
-        Algorithm:
+        Two paths depending on whether a trace_adapter was provided:
+
+        Trace-replay path (trace_adapter is not None):
+          cpu_util, mem_util = adapter.get_reading(node_id, tick_count)
+          If a spike is active for this node, cpu_util is overridden to SPIKE_CPU_UTIL.
+          Memory is taken from the trace (pre-scaled by the adapter to ~39–48%).
+          GPU utilisation is still synthetic (Gaussian) — the Alibaba trace has no GPU signal.
+
+        Gaussian path (trace_adapter is None — default):
           cpu_util_pct    = clamp(N(base_cpu, CPU_NOISE_STD), 0, 100)
           memory_util_pct = clamp(N(MEMORY_BASE_UTIL, MEMORY_NOISE_STD), 0, 100)
-          gpu_util_pct    = {"A100": clamp(N(GPU_BASE_UTIL, GPU_NOISE_STD), 0, 100)}
-                            if node.arch == GPU_NODE else {}
-
-        The Gaussian noise is drawn with Python's random.gauss() — no numpy
-        dependency here (keeps the collector lightweight).
+          Spike is built into base_cpu (inject_spike sets _base_cpu[node_id] = 92%).
 
         Args:
             node_id: The node to generate telemetry for.
@@ -270,11 +287,20 @@ class TelemetryCollector:
         """
         node = self._service.node_state.get(node_id)
 
-        cpu_base = self._base_cpu.get(node_id, 40.0)
-        cpu_util = _clamp(random.gauss(cpu_base, CPU_NOISE_STD), 0.0, 100.0)
-        mem_util = _clamp(random.gauss(MEMORY_BASE_UTIL, MEMORY_NOISE_STD), 0.0, 100.0)
+        if self._trace_adapter is not None:
+            # Real trace path: get autocorrelated CPU/memory from Alibaba trace
+            cpu_util, mem_util = self._trace_adapter.get_reading(node_id, self._tick_count)
+            # Spike override: if a spike is active, replace the trace CPU with spike level
+            if node_id in self._spike_remaining:
+                cpu_util = SPIKE_CPU_UTIL
+        else:
+            # Gaussian path: original behaviour (inject_spike modifies _base_cpu directly)
+            cpu_base = self._base_cpu.get(node_id, 40.0)
+            cpu_util = _clamp(random.gauss(cpu_base, CPU_NOISE_STD), 0.0, 100.0)
+            mem_util = _clamp(random.gauss(MEMORY_BASE_UTIL, MEMORY_NOISE_STD), 0.0, 100.0)
 
         # GPU nodes get synthetic GPU utilisation; CPU/ARM nodes don't
+        # (Alibaba trace has no GPU data — always use Gaussian for GPU nodes)
         gpu_util: Dict[str, float] = {}
         if node is not None and node.arch == _GPU_ARCH:
             gpu_util = {

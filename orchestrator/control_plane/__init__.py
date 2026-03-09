@@ -22,6 +22,9 @@ Public API (grows phase by phase):
     Phase 6:
         SchedulingStrategy      — dataclass: node-filter + CostEngine overrides
         WorkloadIntentRouter    — maps JobRequest intent → SchedulingStrategy
+
+    Phase 8:
+        NodeAgent               — async per-node execution daemon
 """
 
 from orchestrator.control_plane.predictor import WorkloadPredictor
@@ -41,6 +44,7 @@ from orchestrator.control_plane.intent_router import (
     WorkloadIntentRouter,
 )
 from orchestrator.telemetry.collector import TelemetryCollector
+from orchestrator.data_plane.agent import NodeAgent
 
 __all__ = [
     "WorkloadPredictor",
@@ -54,4 +58,5 @@ __all__ = [
     "SchedulingStrategy",
     "WorkloadIntentRouter",
     "TelemetryCollector",
+    "NodeAgent",
 ]
