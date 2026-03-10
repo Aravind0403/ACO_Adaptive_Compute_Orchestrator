@@ -158,6 +158,7 @@ class Colony:
         self,
         jobs: List[JobRequest],
         nodes: List[ComputeNode],
+        initial_tau: Optional["np.ndarray"] = None,
     ) -> None:
         """
         Initialise the colony with the jobs to place and candidate nodes.
@@ -166,14 +167,18 @@ class Colony:
         and integer matrix indices.
 
         Args:
-            jobs:  Non-empty list of JobRequest objects. Order is stable
-                   throughout the colony's life — defines row indices.
-            nodes: Non-empty list of ComputeNode objects. Order is stable
-                   throughout the colony's life — defines column indices.
+            jobs:        Non-empty list of JobRequest objects. Order is stable
+                         throughout the colony's life — defines row indices.
+            nodes:       Non-empty list of ComputeNode objects. Order is stable
+                         throughout the colony's life — defines column indices.
+            initial_tau: Optional 1-D array of shape (n_nodes,) with per-node
+                         pheromone priors accumulated across past scheduling
+                         calls. When provided, PheromoneMatrix seeds itself
+                         with these values instead of uniform TAU_INITIAL=1.0,
+                         enabling the colony to benefit from learned history.
 
         Raises:
-            ValueError: if jobs or nodes is empty. An empty input is a
-                        caller bug (not a scheduling failure) — fail fast.
+            ValueError: if jobs or nodes is empty.
 
         Index construction:
             _job_index  = {job.job_id: i for i, job in enumerate(jobs)}
@@ -192,6 +197,7 @@ class Colony:
         self._nodes = nodes
         self._n_jobs = len(jobs)
         self._n_nodes = len(nodes)
+        self._initial_tau = initial_tau   # forwarded to PheromoneMatrix in run()
 
         # O(1) lookup: string ID → integer position
         self._job_index:  Dict[str, int] = {
@@ -295,7 +301,10 @@ class Colony:
         # ── Normal path: full colony loop ───────────────────────────────────
         start = time.perf_counter()
 
-        matrix = PheromoneMatrix(self._n_jobs, self._n_nodes)
+        # Seed the matrix with cross-call pheromone history if provided.
+        # This is what gives ACO its long-term learning: each run starts
+        # informed by which nodes have performed well in past calls.
+        matrix = PheromoneMatrix(self._n_jobs, self._n_nodes, self._initial_tau)
 
         # Track the globally best solution across all iterations
         best_solution: Optional[Dict[int, int]] = None

@@ -248,6 +248,7 @@ class WorkloadPredictor:
         self._cpu_mean: float = 0.0
         self._cpu_std: float = 1.0
         self._last_fit_sample_count: int = 0   # for refit_if_needed()
+        self._last_mae: float = 20.0           # MAE in % CPU after last fit (high init = uncertain)
 
     # ── Public properties (readable by tests) ─────────────────────────────────
 
@@ -349,8 +350,17 @@ class WorkloadPredictor:
             loss.backward()
             optimiser.step()
 
-        # ── Commit ────────────────────────────────────────────────────────────
+        # ── Compute hold-out MAE for calibrated confidence ─────────────────────
+        # Use the final training predictions (no separate val split — dataset is small).
+        # MAE is in z-score units; convert back to % CPU for interpretability.
         model.eval()
+        with torch.no_grad():
+            final_preds = model(X_tensor).squeeze()          # (n_windows,)
+        final_targets = y_tensor.squeeze()
+        mae_z = float((final_preds - final_targets).abs().mean())
+        self._last_mae = mae_z * std   # denormalise: z MAE × std → % CPU MAE
+
+        # ── Commit ────────────────────────────────────────────────────────────
         self._model = model
         self._last_fit_sample_count = len(profile.samples)
         self._trained = True
@@ -428,8 +438,8 @@ class WorkloadPredictor:
         # 4. Spike probability
         spike_probability = self._compute_spike_probability(pred_cpu, profile)
 
-        # 5. Confidence
-        confidence = self._compute_confidence(len(profile.samples))
+        # 5. Confidence — blended from sample count + hold-out MAE
+        confidence = self._compute_confidence(len(profile.samples), self._last_mae)
 
         return PredictionResult(
             node_id=self.node_id,
@@ -509,36 +519,51 @@ class WorkloadPredictor:
         return spike_prob
 
     @staticmethod
-    def _compute_confidence(n_samples: int) -> float:
+    def _compute_confidence(n_samples: int, mae_cpu_pct: float = 20.0) -> float:
         """
-        Map dataset size to a confidence score via linear interpolation.
+        Calibrated confidence: blends sample-count coverage with hold-out MAE quality.
 
-        Scale:
-            n_samples = LOOKBACK (10)  → confidence = 0.5  (barely enough data)
-            n_samples = 500            → confidence = 1.0  (full history)
+        Previous version used sample count only — this caused confidence=1.0 on any
+        smooth trace with 500+ samples, regardless of whether the model was accurate.
+        A model can be data-rich and still have high prediction error on noisy signals.
 
-        Formula:
-            confidence = 0.5 + (n_samples - LOOKBACK) / (500 - LOOKBACK) × 0.5
+        New formula (equal-weight blend):
+            sample_score = min(1.0, (n_samples - LOOKBACK) / (500 - LOOKBACK))
+                           # 0.0 at 10 samples → 1.0 at 500 samples
 
-        Why start at 0.5?
-            At 10 samples the LSTM has just barely trained. The prediction is
-            better than the cold-start heuristic (0.1) but still uncertain.
-            Callers can treat < 0.7 as "low confidence, add headroom."
+            mae_score = max(0.0, 1.0 - mae_cpu_pct / MAE_CEILING)
+                        # MAE_CEILING = 20.0% CPU
+                        # MAE=0%  → 1.0 (perfect)   MAE=10% → 0.5   MAE≥20% → 0.0
+
+            confidence = 0.5 * sample_score + 0.5 * mae_score
+
+        Examples:
+            500 samples, MAE=2%  → confidence = 0.5×1.0 + 0.5×0.9 = 0.95 ✓
+            500 samples, MAE=15% → confidence = 0.5×1.0 + 0.5×0.25 = 0.625 (penalised)
+            50 samples,  MAE=3%  → confidence = 0.5×0.08 + 0.5×0.85 = 0.465
+            10 samples   (cold)  → confidence = 0.0 + 0.5×0.0 = 0.0  (clamped to 0.1)
 
         Args:
-            n_samples: Current number of samples in the profile.
+            n_samples:   Current number of samples in the profile.
+            mae_cpu_pct: Hold-out MAE in % CPU from the last fit() call. Default 20.0
+                         (maximum uncertainty) until the first real fit completes.
 
         Returns:
-            float in [0.5, 1.0].
+            float in [0.1, 1.0].
         """
-        max_samples = 500
-        if n_samples <= LOOKBACK:
-            return 0.5
+        MAE_CEILING = 20.0   # above this, model quality contributes 0 to confidence
 
-        numerator = n_samples - LOOKBACK
-        denominator = max_samples - LOOKBACK   # 490
-        confidence = 0.5 + (numerator / denominator) * 0.5
-        return min(confidence, 1.0)
+        # Sample coverage score (0 → 1 as samples grow from LOOKBACK to 500)
+        if n_samples <= LOOKBACK:
+            sample_score = 0.0
+        else:
+            sample_score = min(1.0, (n_samples - LOOKBACK) / (500 - LOOKBACK))
+
+        # MAE quality score (1.0 = perfect, 0.0 = MAE ≥ ceiling)
+        mae_score = max(0.0, 1.0 - mae_cpu_pct / MAE_CEILING)
+
+        confidence = 0.5 * sample_score + 0.5 * mae_score
+        return max(0.1, min(confidence, 1.0))   # floor 0.1 (never fully opaque)
 
     def __repr__(self) -> str:
         return (

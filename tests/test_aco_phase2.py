@@ -846,6 +846,104 @@ class TestColony:
         )
         print(f"\n[CONVERGENCE] Best node selected {best_node_wins}/{trials} times ({win_rate:.0%})")
 
+    def test_scale_benchmark_200_jobs(self):
+        """
+        Scale stress test: Colony must schedule 200 jobs across 10 nodes in
+        <2,500ms total (<12.5ms per job on average).
+
+        Addresses Criticism 1: the original benchmark (5 jobs × 10 nodes) was
+        too small to trust. This validates behaviour under real-world scale.
+        Also checks pheromone matrix stability: variance of per-run cost should
+        be within 3× the mean (no thrashing or wild oscillation).
+        """
+        nodes = [
+            _make_node(
+                f"n{i}",
+                total_cpu=64.0,
+                total_mem=256.0,
+                cost_per_hour=float(i + 1) * 0.2,
+            )
+            for i in range(10)
+        ]
+        jobs = [
+            _make_job(
+                f"scale-j{i}",
+                workload_type=(
+                    WorkloadType.BATCH if i % 3 == 0
+                    else WorkloadType.STREAM if i % 3 == 1
+                    else WorkloadType.LATENCY_CRITICAL
+                ),
+                cpu_min=1.0,
+                mem_min=2.0,
+                priority=max(1, i % 100),   # ge=1 constraint on JobRequest
+            )
+            for i in range(200)
+        ]
+
+        t_start = time.perf_counter()
+        # Schedule all 200 jobs one at a time (the real-world path)
+        run_costs: List[float] = []
+        for job in jobs:
+            colony = Colony(jobs=[job], nodes=nodes)
+            plan = colony.run()
+            assert plan is not None, f"Colony returned None for job {job.job_id}"
+            assert job.job_id in plan, f"Plan missing job {job.job_id}"
+            run_costs.append(colony.last_run_ms)
+
+        total_ms = (time.perf_counter() - t_start) * 1000.0
+        avg_ms = total_ms / len(jobs)
+
+        assert total_ms <= 2500.0, (
+            f"200 jobs took {total_ms:.1f}ms (>{2500.0}ms budget). "
+            f"avg={avg_ms:.2f}ms/job"
+        )
+
+        # Stability: variance should be within 3× mean (no thrashing)
+        mean_cost = sum(run_costs) / len(run_costs)
+        variance = sum((c - mean_cost) ** 2 for c in run_costs) / len(run_costs)
+        std_dev = variance ** 0.5
+        assert std_dev <= 3.0 * mean_cost or std_dev <= 5.0, (
+            f"Pheromone latency is unstable: mean={mean_cost:.2f}ms, "
+            f"std={std_dev:.2f}ms (> 3× mean). Colony may be thrashing."
+        )
+
+        print(
+            f"\n[SCALE] 200 jobs × 10 nodes: total={total_ms:.1f}ms "
+            f"avg={avg_ms:.2f}ms/job std={std_dev:.2f}ms"
+        )
+
+    def test_pheromone_seeding_biases_colony(self):
+        """
+        When initial_tau seeds one node much higher than others, the colony
+        should choose it more often — cross-call pheromone learning works.
+
+        This directly validates Fix 3: seeding with prior knowledge changes
+        placement outcomes (not just a no-op passthrough).
+        """
+        import numpy as np
+        n_best = _make_node("n-seeded", total_cpu=16.0, total_mem=64.0, cost_per_hour=1.0)
+        n_other = _make_node("n-other",  total_cpu=16.0, total_mem=64.0, cost_per_hour=1.0)
+        nodes = [n_other, n_best]   # n-seeded is index 1
+
+        job = _make_job("j1", workload_type=WorkloadType.BATCH, cpu_min=1.0, mem_min=2.0)
+
+        # Seed n-seeded with very high pheromone, n-other with minimum
+        initial_tau = np.array([TAU_MIN, TAU_MAX], dtype=np.float64)
+
+        seeded_wins = 0
+        trials = 50
+        for _ in range(trials):
+            plan = Colony(jobs=[job], nodes=nodes, initial_tau=initial_tau).run()
+            if plan["j1"] == "n-seeded":
+                seeded_wins += 1
+
+        win_rate = seeded_wins / trials
+        assert win_rate >= 0.80, (
+            f"Seeded node won only {seeded_wins}/{trials} ({win_rate:.0%}). "
+            f"Pheromone seeding should bias the colony strongly (≥80%)."
+        )
+        print(f"\n[SEED] Seeded node won {seeded_wins}/{trials} ({win_rate:.0%})")
+
     # ── repr ──────────────────────────────────────────────────────────────
 
     def test_repr_after_run(self):

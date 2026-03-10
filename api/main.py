@@ -81,6 +81,9 @@ async def lifespan(application: FastAPI):
     Start background telemetry loop and per-node NodeAgents on startup.
     Cancel them gracefully on shutdown.
     """
+    # Restore pheromone history from last run (no-op if snapshot doesn't exist yet)
+    svc.load_pheromone_snapshot()
+
     # Create one NodeAgent per cluster node (heartbeat only — jobs are fire-and-forget)
     for node_id in svc.node_state:
         agent = NodeAgent(node_id, svc)
@@ -103,14 +106,30 @@ async def lifespan(application: FastAPI):
     await asyncio.gather(telemetry_task, return_exceptions=True)
     for agent in _agents.values():
         await agent.stop()
+    svc.save_pheromone_snapshot()   # persist learned placement preferences for next restart
     logger.info("ACO Scheduler API shutdown complete")
 
 
 async def _telemetry_loop() -> None:
-    """Drive TelemetryCollector.tick() every _TELEMETRY_INTERVAL_S seconds."""
+    """Drive TelemetryCollector.tick() every _TELEMETRY_INTERVAL_S seconds.
+
+    tick() is wrapped in asyncio.to_thread() so that the LSTM refit (CPU-bound
+    PyTorch training, triggered every 10 ticks) does not block the event loop.
+    Without this, every refit stalls all incoming API requests for ~50–200ms.
+
+    Also drains the pending job queue on each tick — retrying saturated-cluster
+    placements as resources free up from completed jobs.
+    """
     try:
         while True:
-            collector.tick()
+            await asyncio.to_thread(collector.tick)
+            # Drain queue: retry any jobs that were held due to cluster saturation.
+            # Run in thread to avoid blocking event loop if many jobs re-schedule.
+            outcomes = await asyncio.to_thread(svc.drain_pending_queue)
+            if outcomes:
+                scheduled = sum(1 for o in outcomes if o.get("status") == "SCHEDULED")
+                expired   = sum(1 for o in outcomes if o.get("status") == "EXPIRED")
+                logger.info("Queue drain: %d scheduled, %d expired", scheduled, expired)
             await asyncio.sleep(_TELEMETRY_INTERVAL_S)
     except asyncio.CancelledError:
         pass
@@ -315,6 +334,25 @@ async def list_nodes():
             entry["live_telemetry"] = None
         nodes.append(entry)
     return {"count": len(nodes), "nodes": nodes}
+
+
+# ── Queue endpoint ─────────────────────────────────────────────────────────────
+
+@app.get("/queue", summary="Pending job queue status")
+async def get_queue():
+    """
+    Return the current state of the back-pressure queue.
+
+    When the cluster is fully saturated, new jobs are held here instead of
+    being silently rejected. The queue drains automatically every
+    `_TELEMETRY_INTERVAL_S` seconds as resources free up.
+
+    - `depth`: number of jobs currently waiting
+    - `oldest_age_s`: age of the oldest queued job in seconds
+    - `max_depth`: maximum queue capacity (default 50)
+    - `ttl_s`: job expiry time-to-live in seconds (default 60)
+    """
+    return svc.get_queue_status()
 
 
 # ── Simulation endpoints ───────────────────────────────────────────────────────

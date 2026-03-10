@@ -39,10 +39,11 @@ submit_job() and complete_job().
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections import defaultdict, deque
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from orchestrator.shared.models import (
     ComputeNode,
@@ -72,6 +73,14 @@ from orchestrator.control_plane.predictor import WorkloadPredictor
 from orchestrator.control_plane.intent_router import WorkloadIntentRouter
 
 logger = logging.getLogger(__name__)
+
+
+# ── Back-pressure queue configuration ────────────────────────────────────────
+QUEUE_MAX_DEPTH: int = 50
+"""Maximum number of jobs held in the pending queue when cluster is saturated."""
+
+QUEUE_TTL_S: float = 60.0
+"""Time-to-live for queued jobs. Jobs older than this are expired on drain."""
 
 
 class OrchestratorService:
@@ -130,6 +139,24 @@ class OrchestratorService:
 
         # Shared WorkloadIntentRouter — stateless, one instance is fine.
         self._router = WorkloadIntentRouter()
+
+        # ── Phase 10: Back-pressure queue ─────────────────────────────────────
+        # When all nodes are saturated, jobs are held in this bounded queue
+        # instead of being silently dropped. Each entry is:
+        #   (request_data: dict, enqueued_at: float, scheduling_latency_ms: Optional[float])
+        # drain_pending_queue() retries placement for each entry.
+        # Jobs older than QUEUE_TTL_S are expired (EXPIRED status).
+        self._pending_queue: deque = deque(maxlen=QUEUE_MAX_DEPTH)
+
+        # ── Phase 10: Cross-call pheromone persistence ────────────────────────
+        # One float per node — the accumulated pheromone from all past scheduling
+        # calls. Starts at TAU_INITIAL (1.0) = no prior. After each successful
+        # placement the chosen node's level is deposited and all nodes evaporate.
+        # Passed to aco_schedule() as node_pheromone so the colony starts informed
+        # by history rather than blind on every call.
+        # Can be serialised/restored via save_pheromone_snapshot() /
+        # load_pheromone_snapshot() to survive API process restarts.
+        self._node_pheromone: Dict[str, float] = {}   # populated after cluster init
 
         # ── Bootstrap cluster ─────────────────────────────────────────────────
         self._initialize_mock_nodes()
@@ -221,6 +248,8 @@ class OrchestratorService:
             self.node_state[node.node_id] = node
             # Create a predictor for each node upfront (untrained until data arrives)
             self.predictors[node.node_id] = WorkloadPredictor(node_id=node.node_id)
+            # Initialise cross-call pheromone to TAU_INITIAL (1.0 = no prior knowledge)
+            self._node_pheromone[node.node_id] = 1.0
 
     # ── Primary public API ─────────────────────────────────────────────────────
 
@@ -267,6 +296,21 @@ class OrchestratorService:
                 predictors=self._prediction_cache,
                 strategy=strategy,
                 node_workload_map=dict(self._node_workload_map),
+                node_pheromone=dict(self._node_pheromone),
+            )
+            # ── Update cross-call pheromone ────────────────────────────────
+            # Evaporate all nodes, then deposit on the chosen node.
+            # This accumulates learned placement preference across calls.
+            _RHO = 0.1
+            _Q   = 1.0
+            eta_score = max(self._node_pheromone.get(selected_node_id, 1.0), 0.01)
+            for nid in self._node_pheromone:
+                self._node_pheromone[nid] = max(
+                    0.01, min(10.0, self._node_pheromone[nid] * (1.0 - _RHO))
+                )
+            self._node_pheromone[selected_node_id] = min(
+                10.0,
+                self._node_pheromone[selected_node_id] + _Q / eta_score,
             )
 
             # 4. Resource allocation
@@ -297,13 +341,60 @@ class OrchestratorService:
                 "message": f"Job placed on {selected_node_id} via ACO scheduler",
             }
 
-        except (AdmissionRejectedError, SchedulingFailedError) as e:
+        except AdmissionRejectedError as e:
+            # Admission failures are permanent (invalid job spec) — reject immediately.
             return {
                 "status": "REJECTED",
                 "job_id": job_id,
                 "node_id": None,
                 "message": str(e),
             }
+        except SchedulingFailedError as e:
+            # Distinguish permanent vs transient failure:
+            #   Permanent  — no node has enough TOTAL resources (can never fit even empty).
+            #                E.g., job requires 9999 CPU cores but max node has 32.
+            #   Transient  — nodes could fit the job if they weren't currently allocated.
+            #                E.g., all 32-core nodes are busy with other jobs.
+            # Only transient failures are worth queuing.
+            could_ever_fit = any(
+                n.total_cpu_cores >= job_request.resources.cpu_cores_min
+                and n.total_memory_gb >= job_request.resources.memory_gb_min
+                and (not job_request.resources.gpu_required or bool(n.gpu_inventory))
+                and n.state == NodeState.HEALTHY
+                for n in self.node_state.values()
+            )
+            if not could_ever_fit:
+                return {
+                    "status": "REJECTED",
+                    "job_id": job_id,
+                    "node_id": None,
+                    "message": str(e),
+                }
+            # Transient failure — queue the job for retry.
+            if len(self._pending_queue) < QUEUE_MAX_DEPTH:
+                self._pending_queue.append((request_data, time.monotonic(), scheduling_latency_ms))
+                position = len(self._pending_queue)
+                logger.info(
+                    "Job %s queued (cluster saturated, queue depth=%d).", job_id, position
+                )
+                return {
+                    "status": "QUEUED",
+                    "job_id": job_id,
+                    "node_id": None,
+                    "queue_position": position,
+                    "message": (
+                        f"Cluster saturated — job queued at position {position}. "
+                        f"Will retry within {int(QUEUE_TTL_S)}s."
+                    ),
+                }
+            else:
+                # Queue is full — hard reject.
+                return {
+                    "status": "REJECTED",
+                    "job_id": job_id,
+                    "node_id": None,
+                    "message": f"Cluster saturated and queue full ({QUEUE_MAX_DEPTH} jobs). {e}",
+                }
         except Exception as e:
             logger.exception("Unexpected error in submit_job for %s", job_id)
             return {
@@ -312,6 +403,68 @@ class OrchestratorService:
                 "node_id": None,
                 "message": f"Unexpected error: {e.__class__.__name__}: {e}",
             }
+
+    def drain_pending_queue(self) -> List[Dict[str, Any]]:
+        """
+        Retry placement for all queued jobs. Called periodically by the API's
+        background loop (every _TELEMETRY_INTERVAL_S seconds after collector.tick).
+
+        For each queued entry:
+          - If older than QUEUE_TTL_S → expire it (status=EXPIRED).
+          - Otherwise → call submit_job() to retry placement.
+            If SCHEDULED → remove from queue (drain successful).
+            If QUEUED again → stop (cluster still saturated, no point continuing).
+            If REJECTED → remove from queue (permanent failure).
+
+        Returns:
+            List of outcome dicts for monitoring/logging (one per entry processed).
+        """
+        outcomes: List[Dict[str, Any]] = []
+        now = time.monotonic()
+
+        # Process queue front-to-back; stop early if cluster still saturated
+        entries_to_retry = list(self._pending_queue)
+        self._pending_queue.clear()
+
+        for request_data, enqueued_at, lat_ms in entries_to_retry:
+            age_s = now - enqueued_at
+            if age_s > QUEUE_TTL_S:
+                outcomes.append({
+                    "status": "EXPIRED",
+                    "job_id": request_data.get("job_id"),
+                    "age_s": round(age_s, 1),
+                })
+                logger.warning(
+                    "Queued job %s expired after %.1fs (TTL=%ds).",
+                    request_data.get("job_id"), age_s, int(QUEUE_TTL_S),
+                )
+                continue
+
+            result = self.submit_job(request_data, scheduling_latency_ms=lat_ms)
+            outcomes.append(result)
+
+            if result["status"] == "QUEUED":
+                # Cluster still saturated — re-queue the remaining entries and stop
+                self._pending_queue.append((request_data, enqueued_at, lat_ms))
+                # Re-queue remaining (we already cleared the deque above)
+                for remaining in entries_to_retry[entries_to_retry.index((request_data, enqueued_at, lat_ms)) + 1:]:
+                    self._pending_queue.append(remaining)
+                break
+
+        return outcomes
+
+    def get_queue_status(self) -> Dict[str, Any]:
+        """Return current queue depth and oldest job age for the API /queue endpoint."""
+        now = time.monotonic()
+        if not self._pending_queue:
+            return {"depth": 0, "oldest_age_s": 0.0, "max_depth": QUEUE_MAX_DEPTH, "ttl_s": QUEUE_TTL_S}
+        oldest_age = now - min(entry[1] for entry in self._pending_queue)
+        return {
+            "depth": len(self._pending_queue),
+            "oldest_age_s": round(oldest_age, 1),
+            "max_depth": QUEUE_MAX_DEPTH,
+            "ttl_s": QUEUE_TTL_S,
+        }
 
     def complete_job(
         self,
@@ -521,6 +674,58 @@ class OrchestratorService:
                 for name, profile in self.workload_profiles.items()
             },
         }
+
+    # ── Pheromone snapshot (cross-restart persistence) ──────────────────────────
+
+    def save_pheromone_snapshot(self, path: str = "/tmp/aco_pheromone.json") -> None:
+        """
+        Persist the current per-node pheromone vector to a JSON file.
+
+        Called on API shutdown so learned placement preferences survive restarts.
+        The file is small (~100 bytes for 5 nodes) and written atomically via
+        a temp-and-rename pattern to avoid partial-write corruption.
+        """
+        import json, os, tempfile
+        data = {"version": 1, "pheromone": self._node_pheromone}
+        dir_ = os.path.dirname(path) or "."
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", dir=dir_, suffix=".tmp", delete=False
+            ) as tmp:
+                json.dump(data, tmp, indent=2)
+                tmp_path = tmp.name
+            os.replace(tmp_path, path)
+            logger.info("Pheromone snapshot saved to %s (%d nodes)", path, len(self._node_pheromone))
+        except OSError as exc:
+            logger.warning("Could not save pheromone snapshot to %s: %s", path, exc)
+
+    def load_pheromone_snapshot(self, path: str = "/tmp/aco_pheromone.json") -> None:
+        """
+        Restore per-node pheromone from a previously saved JSON snapshot.
+
+        Called on API startup. Only restores values for nodes that exist in
+        the current cluster (safe against node additions/removals between restarts).
+        Missing nodes are left at TAU_INITIAL=1.0.
+        """
+        import json, os
+        if not os.path.exists(path):
+            logger.info("No pheromone snapshot at %s — starting fresh.", path)
+            return
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            saved = data.get("pheromone", {})
+            restored = 0
+            for node_id in self._node_pheromone:
+                if node_id in saved:
+                    self._node_pheromone[node_id] = float(saved[node_id])
+                    restored += 1
+            logger.info(
+                "Pheromone snapshot loaded from %s (%d/%d nodes restored).",
+                path, restored, len(self._node_pheromone),
+            )
+        except (OSError, ValueError, KeyError) as exc:
+            logger.warning("Could not load pheromone snapshot from %s: %s", path, exc)
 
     # ── Private helpers ───────────────────────────────────────────────────────
 

@@ -41,8 +41,12 @@ The heuristic η breakdown
                       Ensures ants prefer nodes with room to breathe.
 
   cost_gate:          Can job i afford node j?
-                      1.0 if within budget (or no ceiling set), 0.0 if over.
-                      Hard gate — prevents any budget violations.
+                      1.0 if within budget (or no ceiling set).
+                      Soft taper from 1.0 → 0.0 over a 20% overage band.
+                      Hard 0.0 if node cost exceeds ceiling by > 20%.
+                      (Previously a hard binary cliff — causes bizarre placement
+                       decisions near the budget boundary. Now gracefully penalises
+                       near-budget nodes without making them completely invisible.)
 
   workload_affinity:  Is node j the right hardware type for job i?
                       1.5 if GPU node + BATCH (ideal pairing).
@@ -299,26 +303,38 @@ class Ant:
         """
         Does this node respect the job's cost ceiling?
 
-        Formula:
-            No ceiling set         → 1.0  (no constraint)
-            Node cost ≤ ceiling    → 1.0  (within budget)
-            Node cost > ceiling    → 0.0  (over budget — hard gate)
+        Previous behaviour (hard cliff):
+            Within budget → 1.0,  over budget → 0.0 immediately.
+            Problem: a node at $0.51 with a $0.50 ceiling scores the same
+            as a $50 node — bizarre placement decisions at the boundary.
 
-        Why a hard gate (0 or 1) and not a gradient?
-            A gradient (e.g., ceiling / node_cost) would still allow
-            occasional over-budget placements because the probabilistic
-            selection could still choose a penalised but non-zero node.
-            A hard zero guarantees budget compliance — the arc is never
-            selected regardless of pheromone levels.
+        New behaviour (soft taper over a 20% overage band):
+            No ceiling                     → 1.0  (no constraint)
+            cost ≤ ceiling                 → 1.0  (fully within budget)
+            ceiling < cost ≤ ceiling×1.20  → linear taper 1.0 → 0.0
+                                             (visible but increasingly penalised)
+            cost > ceiling×1.20            → 0.0  (hard exclude)
+
+        The 20% taper matches typical cloud spot-price variance. A job with a
+        $1.00 ceiling still considers a $1.10 node (score≈0.5) but ignores a
+        $1.50 node completely.
 
         Returns:
-            1.0 or 0.0
+            float in [0.0, 1.0]
         """
         if job.cost_ceiling_usd is None:
             return 1.0
-        if node.cost_profile.cost_per_hour_usd <= job.cost_ceiling_usd:
+        ceiling = job.cost_ceiling_usd
+        node_cost = node.cost_profile.cost_per_hour_usd
+        if node_cost <= ceiling:
             return 1.0
-        return 0.0
+        # 20% soft taper band above the ceiling
+        overage_limit = ceiling * 1.20
+        if node_cost > overage_limit:
+            return 0.0
+        # Linear taper: 1.0 at ceiling, 0.0 at ceiling×1.20
+        overage_frac = (node_cost - ceiling) / (overage_limit - ceiling)
+        return 1.0 - overage_frac
 
     @staticmethod
     def _workload_affinity_score(job: JobRequest, node: ComputeNode) -> float:

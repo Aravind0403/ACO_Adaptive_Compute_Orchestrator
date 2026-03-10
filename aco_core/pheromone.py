@@ -45,6 +45,8 @@ NumPy design choices
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -115,26 +117,31 @@ class PheromoneMatrix:
         If Phase V adds parallel ant threads, add a lock around deposit().
     """
 
-    def __init__(self, n_jobs: int, n_nodes: int) -> None:
+    def __init__(
+        self,
+        n_jobs: int,
+        n_nodes: int,
+        initial_tau: Optional[NDArray[np.float64]] = None,
+    ) -> None:
         """
-        Initialise a uniform pheromone matrix.
-
-        All cells are set to TAU_INITIAL (1.0). Every arc starts equally
-        attractive — the colony has no prior knowledge at iteration 0.
+        Initialise a pheromone matrix, optionally seeded with prior knowledge.
 
         Args:
-            n_jobs:  Number of jobs (rows). Must be ≥ 1.
-            n_nodes: Number of candidate nodes (columns). Must be ≥ 1.
+            n_jobs:      Number of jobs (rows). Must be ≥ 1.
+            n_nodes:     Number of candidate nodes (columns). Must be ≥ 1.
+            initial_tau: Optional 1-D array of shape (n_nodes,) containing the
+                         per-node pheromone prior. When provided, every row of
+                         the matrix is initialised to these values instead of
+                         the uniform TAU_INITIAL=1.0.
+
+                         This enables cross-call learning: OrchestratorService
+                         maintains a ``_node_pheromone`` vector that accumulates
+                         placement history across scheduling calls. Passing it
+                         here seeds the colony with that learned preference so
+                         the colony does not start blind on every call.
 
         Raises:
-            ValueError: if either dimension is less than 1.
-
-        NumPy operation:
-            np.full((n_jobs, n_nodes), TAU_INITIAL, dtype=np.float64)
-
-            np.full() is preferred over np.ones() * TAU_INITIAL because:
-            • Intent is explicit: "fill with this constant."
-            • dtype=np.float64 is set once at creation — no implicit upcasting.
+            ValueError: if either dimension < 1, or if initial_tau has wrong shape.
         """
         if n_jobs < 1 or n_nodes < 1:
             raise ValueError(
@@ -143,9 +150,19 @@ class PheromoneMatrix:
             )
         self._n_jobs = n_jobs
         self._n_nodes = n_nodes
-        self._matrix: NDArray[np.float64] = np.full(
-            (n_jobs, n_nodes), TAU_INITIAL, dtype=np.float64
-        )
+
+        if initial_tau is not None:
+            if initial_tau.shape != (n_nodes,):
+                raise ValueError(
+                    f"initial_tau must have shape ({n_nodes},), got {initial_tau.shape}"
+                )
+            # Broadcast: all job rows start with the same per-node prior
+            row = np.clip(initial_tau.astype(np.float64), TAU_MIN, TAU_MAX)
+            self._matrix: NDArray[np.float64] = np.tile(row, (n_jobs, 1))
+        else:
+            self._matrix: NDArray[np.float64] = np.full(
+                (n_jobs, n_nodes), TAU_INITIAL, dtype=np.float64
+            )
 
     # ── Core operations ────────────────────────────────────────────────────────
 

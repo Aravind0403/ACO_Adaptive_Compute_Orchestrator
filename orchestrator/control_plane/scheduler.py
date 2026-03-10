@@ -47,18 +47,17 @@ When called, aco_schedule:
 
 5. If ColonyFailedError → fall back to naive_schedule() and log a warning.
 
-Pheromone persistence
-──────────────────────
-Each Colony object owns its pheromone matrix for ONE run() call — it starts
-fresh at TAU_INITIAL=1.0 each time. Persistent pheromone across multiple
-scheduling calls (learning over time) is a Phase 7 enhancement when we
-introduce a long-lived PheromoneMatrix in the OrchestratorService.
+Pheromone persistence (Phase 10 hardening)
+───────────────────────────────────────────
+OrchestratorService maintains ``_node_pheromone: Dict[str, float]`` — one
+float per node, accumulated across all scheduling calls. After each successful
+placement the chosen node's score is deposited (Q / score) and all nodes are
+evaporated (×(1-RHO)). This vector is passed to aco_schedule() as
+``node_pheromone`` and injected into PheromoneMatrix as the initial τ row,
+so the colony starts informed by past decisions rather than blind at 1.0.
 
-For Phase 5, each aco_schedule call creates a fresh Colony. This is still
-significantly better than naive_schedule because:
-  - CostEngine provides much richer η (vs simple resource headroom in V1)
-  - Multiple ants explore the space (vs first-fit single pass)
-  - Convergence within one call still finds better placements
+On API startup/shutdown, the snapshot is saved to / loaded from JSON so
+learned preferences survive process restarts.
 
 Error handling contract
 ────────────────────────
@@ -77,6 +76,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional
 
+import numpy as np
+
 from orchestrator.shared.models import (
     ComputeNode,
     JobRequest,
@@ -87,6 +88,7 @@ from orchestrator.shared.models import (
 from orchestrator.control_plane.cost_engine import CostEngine
 from orchestrator.control_plane.intent_router import SchedulingStrategy
 from aco_core import Colony, ColonyFailedError
+from aco_core.pheromone import TAU_INITIAL
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +122,7 @@ def aco_schedule(
     predictors: Optional[Dict[str, PredictionResult]] = None,
     strategy: Optional[SchedulingStrategy] = None,
     node_workload_map: Optional[Dict[str, List[WorkloadType]]] = None,
+    node_pheromone: Optional[Dict[str, float]] = None,
 ) -> str:
     """
     Schedule a single job using the ACO Colony with CostEngine η heuristic.
@@ -142,6 +145,10 @@ def aco_schedule(
         node_workload_map: Optional map of node_id → List[WorkloadType] for nodes
                            currently hosting jobs of those types. Used with
                            strategy.avoid_workload_types colocation filter.
+        node_pheromone:    Optional map of node_id → float with cross-call pheromone
+                           levels accumulated by OrchestratorService. Seeded into
+                           PheromoneMatrix so the colony starts informed by past
+                           placement decisions rather than uniform TAU_INITIAL=1.0.
 
     Returns:
         node_id: str — the ID of the selected node.
@@ -235,7 +242,16 @@ def aco_schedule(
     )
 
     try:
-        colony = Colony(jobs=[job_request], nodes=feasible_nodes)
+        # Build initial_tau vector for feasible nodes from cross-call pheromone history.
+        # Nodes not in node_pheromone default to TAU_INITIAL (1.0) — fresh start.
+        initial_tau: Optional["np.ndarray"] = None
+        if node_pheromone:
+            initial_tau = np.array(
+                [node_pheromone.get(n.node_id, TAU_INITIAL) for n in feasible_nodes],
+                dtype=np.float64,
+            )
+
+        colony = Colony(jobs=[job_request], nodes=feasible_nodes, initial_tau=initial_tau)
         colony._eta_override = eta
         plan = _run_colony_with_eta(colony, eta, force_fast_path=use_fast_path)
         node_id = plan[job_request.job_id]
