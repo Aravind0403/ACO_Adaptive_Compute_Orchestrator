@@ -150,10 +150,15 @@ class TestCostPreference:
 
     def test_aco_vs_naive_total_cost_over_many_calls(self):
         """
-        Over 30 batch job submissions, ACO should accumulate lower total cost
-        than naive First Fit by at least 10%.
+        Over 30 batch job submissions with realistic Azure VM job sizes
+        (mix of 2, 4, 8, 16, 32 cores), ACO should accumulate lower total
+        cost than naive First Fit by at least 10%.
 
         Cost is measured as sum of chosen node's cost_per_hour across all placements.
+
+        Uses Azure VM size distribution (seed=42, fixed) to replace the original
+        30 × cpu_min=1.0 controlled-hallucination benchmark. All sizes fit the
+        64-core nodes, so no admission failures.
         """
         # 3 nodes in order: expensive → medium → cheap
         nodes = [
@@ -168,8 +173,16 @@ class TestCostPreference:
         aco_total   = 0.0
         n_calls     = 30
 
+        # Azure VM size distribution (fixed seed=42 for reproducibility)
+        import random as _rnd
+        _rng = _rnd.Random(42)
+        _SIZES   = [2, 4, 8, 16, 32]
+        _WEIGHTS = [0.40, 0.30, 0.20, 0.07, 0.03]
+
         for i in range(n_calls):
-            job = _make_job(f"j{i}", workload_type=WorkloadType.BATCH, cpu_min=1.0, mem_min=2.0)
+            cpu = float(_rng.choices(_SIZES, weights=_WEIGHTS, k=1)[0])
+            job = _make_job(f"j{i}", workload_type=WorkloadType.BATCH,
+                            cpu_min=cpu, mem_min=cpu * 2.0)
             naive_node = naive_schedule(job, nodes)
             aco_node   = aco_schedule(job, nodes)
             naive_total += cost_map[naive_node]
