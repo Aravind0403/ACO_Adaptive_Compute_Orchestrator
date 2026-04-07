@@ -270,7 +270,7 @@ tests/                        202 tests (pytest-asyncio)
 ## Author
 
 **Aravind Sundaresan** — Infrastructure & Distributed Systems Engineer  
-Ex-Microsoft (distributed validation platform, 17K+ microservices) · Ex-Amazon (Alexa device infrastructure)
+Microsoft (distributed validation platform, 17K+ microservices) · Ex-Amazon (Alexa device infrastructure)
 
 - 🌐 [aravindsundaresan.netlify.app](https://aravindsundaresan.netlify.app)
 - 💼 [LinkedIn](https://linkedin.com/in/aravind-sundaresan)
