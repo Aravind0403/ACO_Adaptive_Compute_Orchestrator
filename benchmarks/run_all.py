@@ -85,12 +85,14 @@ def _status_from(tag: str, result: dict) -> str:
         ok  = result.get("advantage_detected", False)
         return f"{'DETECTED' if ok else 'NOT DETECTED'}  early cost {pct:+.1f}% (warm vs cold)"
     if tag == "T4.1":
-        imp_naive  = result.get("improvement_vs_naive_pct", 0.0)
-        imp_random = result.get("improvement_vs_random_pct", 0.0)
+        imp_naive  = result.get("aco_cost_improvement_vs_naive_pct", 0.0)
+        imp_random = result.get("aco_cost_improvement_vs_random_pct", 0.0)
+        qos_pct    = result.get("aco_qos_ls_on_demand_pct", 0.0)
         n_nodes    = result.get("n_nodes", 0)
         gpu_types  = result.get("gpu_types", [])
-        return (f"ACO {imp_naive:+.1f}% vs First-Fit, "
-                f"{imp_random:+.1f}% vs Random  "
+        return (f"ACO-cost {imp_naive:+.1f}% vs First-Fit, "
+                f"{imp_random:+.1f}% vs Random | "
+                f"ACO+QoS LS→OD {qos_pct:.0f}%  "
                 f"({n_nodes} nodes, {len(gpu_types)} GPU types)")
     return str(result)
 

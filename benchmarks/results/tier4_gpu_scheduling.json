@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-18T15:40:27.799056",
+  "timestamp": "2026-06-18T17:11:51.443850",
   "results": {
     "n_nodes": 32,
     "n_jobs": 100,
@@ -26,14 +26,29 @@
       "ls_on_demand_pct": 92.3076923076923,
       "ls_jobs": 78
     },
-    "aco": {
+    "greedy": {
+      "total_cost": 89.0,
+      "mean_cost": 0.89,
+      "ls_on_demand_pct": 80.76923076923077,
+      "ls_jobs": 78
+    },
+    "aco_cost": {
       "total_cost": 115.0,
       "mean_cost": 1.15,
       "ls_on_demand_pct": 74.35897435897436,
       "ls_jobs": 78
     },
-    "improvement_vs_naive_pct": 4.00667779632721,
-    "improvement_vs_random_pct": 79.62076909445331,
-    "ls_on_demand_lift_pp": -17.948717948717942
+    "aco_qos": {
+      "total_cost": 157.4,
+      "mean_cost": 1.574,
+      "ls_on_demand_pct": 97.43589743589743,
+      "ls_jobs": 78
+    },
+    "aco_cost_improvement_vs_random_pct": 79.62076909445331,
+    "aco_cost_improvement_vs_naive_pct": 4.00667779632721,
+    "aco_cost_improvement_vs_greedy_pct": -29.213483146067414,
+    "aco_qos_improvement_vs_naive_pct": -31.385642737896504,
+    "aco_qos_ls_on_demand_pct": 97.43589743589743,
+    "aco_qos_ls_lift_pp": 5.128205128205124
   }
 }

@@ -1,13 +1,21 @@
 {
-  "timestamp": "2026-06-18T15:39:58.725729",
+  "timestamp": "2026-06-18T17:12:22.393943",
   "results": {
     "adversarial": {
       "label": "Adversarial topology (25\u00d7 spread)",
       "random_total": 45.28,
       "naive_total": 90.0,
       "aco_total": 3.5999999999999996,
+      "aco_lstm_total": 3.5999999999999996,
       "improvement_vs_naive_pct": 96.00000000000001,
       "improvement_vs_random_pct": 92.04946996466431,
+      "lstm_improvement_vs_naive_pct": 96.00000000000001,
+      "lstm_delta_vs_aco_pct": 0.0,
+      "lstm_confidence_per_node": {
+        "n-exp": 0.628,
+        "n-mid": 0.628,
+        "n-cheap": 0.629
+      },
       "passed": true
     },
     "balanced": {
@@ -15,8 +23,16 @@
       "random_total": 18.8,
       "naive_total": 21.0,
       "aco_total": 15.0,
+      "aco_lstm_total": 15.0,
       "improvement_vs_naive_pct": 28.57142857142857,
       "improvement_vs_random_pct": 20.212765957446813,
+      "lstm_improvement_vs_naive_pct": 28.57142857142857,
+      "lstm_delta_vs_aco_pct": 0.0,
+      "lstm_confidence_per_node": {
+        "nb-mid": 0.628,
+        "nb-exp": 0.629,
+        "nb-cheap": 0.629
+      },
       "passed": true
     }
   }

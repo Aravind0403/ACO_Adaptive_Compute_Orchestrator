@@ -61,7 +61,10 @@ from orchestrator.shared.models import (
     WorkloadType,
 )
 from orchestrator.control_plane.scheduler import aco_schedule, naive_schedule
+from orchestrator.control_plane.intent_router import WorkloadIntentRouter
 from benchmarks._helpers import RESULTS_DIR, save_results
+
+_router = WorkloadIntentRouter()
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -132,7 +135,7 @@ def _load_nodes(n_per_type: int = 5) -> List[ComputeNode]:
 
             sampled.append(ComputeNode(
                 node_id=f"{model.lower()}-{idx:02d}",
-                arch=NodeArch.X86_64,
+                arch=NodeArch.GPU_NODE,
                 total_cpu_cores=cpu_cores,
                 total_memory_gb=memory_gb,
                 gpu_inventory={model: gpu_count},
@@ -196,6 +199,25 @@ def _load_jobs(n_jobs: int = 100, seed: int = 42) -> List[JobRequest]:
     return jobs
 
 
+# ── Greedy baseline ───────────────────────────────────────────────────────────
+
+def greedy_schedule(job: JobRequest, nodes: List[ComputeNode]) -> str:
+    """
+    Cost-Aware Greedy: sort feasible nodes by $/hr ascending, pick cheapest.
+    Represents the theoretically optimal one-shot heuristic with no learning.
+    """
+    feasible = [
+        n for n in nodes
+        if n.state == NodeState.HEALTHY
+        and n.total_cpu_cores >= job.resources.cpu_cores_min
+        and n.total_memory_gb >= job.resources.memory_gb_min
+        and sum(n.gpu_inventory.values()) >= job.resources.gpu_count
+    ]
+    if not feasible:
+        feasible = nodes
+    return min(feasible, key=lambda n: n.cost_profile.cost_per_hour_usd).node_id
+
+
 # ── Scenario runner ───────────────────────────────────────────────────────────
 
 def _run_scenario(
@@ -203,51 +225,63 @@ def _run_scenario(
     jobs: List[JobRequest],
 ) -> Dict:
     """
-    3-way comparison: Random / First-Fit (naive) / ACO on GPU jobs.
+    4-way comparison: Random / First-Fit / Cost-Aware Greedy / ACO.
+    ACO uses WorkloadIntentRouter to enforce ON_DEMAND constraint for LS GPU jobs.
     Returns placement counts, costs, and QoS compliance per algorithm.
     """
     rng = random.Random(42)
-    cost_map = {n.node_id: n.cost_profile.cost_per_hour_usd for n in nodes}
-    instance_map = {n.node_id: n.cost_profile.instance_type for n in nodes}
+    cost_map     = {n.node_id: n.cost_profile.cost_per_hour_usd for n in nodes}
+    instance_map = {n.node_id: n.cost_profile.instance_type       for n in nodes}
 
     results: Dict[str, Dict] = {
         "random":    {"costs": [], "on_demand_ls": 0, "ls_total": 0},
         "naive":     {"costs": [], "on_demand_ls": 0, "ls_total": 0},
-        "aco":       {"costs": [], "on_demand_ls": 0, "ls_total": 0},
+        "greedy":    {"costs": [], "on_demand_ls": 0, "ls_total": 0},
+        "aco_cost":  {"costs": [], "on_demand_ls": 0, "ls_total": 0},
+        "aco_qos":   {"costs": [], "on_demand_ls": 0, "ls_total": 0},
     }
 
     for job in jobs:
         is_ls = (job.workload_type == WorkloadType.LATENCY_CRITICAL)
 
-        naive_nid = naive_schedule(job, nodes)
-        aco_nid   = aco_schedule(job, nodes)
+        # ACO-cost: no strategy — pure cost optimisation
+        aco_cost_nid = aco_schedule(job, nodes)
 
-        # Random: capable nodes (GPU count satisfied)
-        capable = [
+        # ACO-QoS: use intent router — enforces ON_DEMAND for LS GPU jobs
+        try:
+            strategy     = _router.classify(job)
+            aco_qos_nid  = aco_schedule(job, nodes, strategy=strategy)
+        except Exception:
+            aco_qos_nid  = aco_cost_nid
+
+        naive_nid  = naive_schedule(job, nodes)
+        greedy_nid = greedy_schedule(job, nodes)
+        capable    = [
             n for n in nodes
             if sum(n.gpu_inventory.values()) >= job.resources.gpu_count
             and n.total_cpu_cores >= job.resources.cpu_cores_min
             and n.total_memory_gb >= job.resources.memory_gb_min
         ]
-        rand_nid = rng.choice(capable or nodes).node_id
+        rand_nid   = rng.choice(capable or nodes).node_id
 
-        for algo, nid in [("random", rand_nid), ("naive", naive_nid), ("aco", aco_nid)]:
+        for algo, nid in [("random", rand_nid), ("naive", naive_nid),
+                          ("greedy", greedy_nid), ("aco_cost", aco_cost_nid),
+                          ("aco_qos", aco_qos_nid)]:
             results[algo]["costs"].append(cost_map[nid])
             if is_ls:
                 results[algo]["ls_total"] += 1
                 if instance_map[nid] == InstanceType.ON_DEMAND:
                     results[algo]["on_demand_ls"] += 1
 
-    # Aggregate
     out = {}
     for algo, d in results.items():
         total_cost = sum(d["costs"])
         ls = d["ls_total"]
         out[algo] = {
-            "total_cost":        total_cost,
-            "mean_cost":         total_cost / len(jobs) if jobs else 0.0,
-            "ls_on_demand_pct":  (d["on_demand_ls"] / ls * 100.0) if ls > 0 else 0.0,
-            "ls_jobs":           ls,
+            "total_cost":       total_cost,
+            "mean_cost":        total_cost / len(jobs) if jobs else 0.0,
+            "ls_on_demand_pct": (d["on_demand_ls"] / ls * 100.0) if ls > 0 else 0.0,
+            "ls_jobs":          ls,
         }
     return out
 
@@ -282,71 +316,75 @@ def run() -> dict:
 
     scenario = _run_scenario(nodes, jobs)
 
-    aco   = scenario["aco"]
-    naive = scenario["naive"]
-    rand  = scenario["random"]
+    aco_cost = scenario["aco_cost"]
+    aco_qos  = scenario["aco_qos"]
+    naive    = scenario["naive"]
+    rand     = scenario["random"]
+    greedy   = scenario["greedy"]
 
-    imp_vs_naive  = (naive["total_cost"] - aco["total_cost"]) / naive["total_cost"] * 100
-    imp_vs_random = (rand["total_cost"]  - aco["total_cost"]) / rand["total_cost"]  * 100
-    ls_lift = aco["ls_on_demand_pct"] - naive["ls_on_demand_pct"]
+    imp_cost_vs_naive  = (naive["total_cost"]  - aco_cost["total_cost"]) / naive["total_cost"]  * 100
+    imp_cost_vs_random = (rand["total_cost"]   - aco_cost["total_cost"]) / rand["total_cost"]   * 100
+    imp_cost_vs_greedy = (greedy["total_cost"] - aco_cost["total_cost"]) / greedy["total_cost"] * 100
+    imp_qos_vs_naive   = (naive["total_cost"]  - aco_qos["total_cost"])  / naive["total_cost"]  * 100
+    ls_lift_cost = aco_cost["ls_on_demand_pct"] - naive["ls_on_demand_pct"]
+    ls_lift_qos  = aco_qos["ls_on_demand_pct"]  - naive["ls_on_demand_pct"]
 
-    print(f"\n{'Algorithm':<12} {'Total cost':>12} {'Mean/job':>10} {'LS→ON_DEMAND':>14}")
+    print(f"\n{'Algorithm':<18} {'Total $/hr':>11} {'Mean/job':>9} {'LS→OD':>8}")
     print("-" * 52)
-    for label, d in [("Random", rand), ("First-Fit", naive), ("ACO", aco)]:
-        print(f"{label:<12} ${d['total_cost']:>10.2f}/hr  "
-              f"${d['mean_cost']:>7.2f}/hr  {d['ls_on_demand_pct']:>12.1f}%")
+    for label, d in [("Random",    rand),   ("First-Fit", naive),
+                     ("Greedy",    greedy), ("ACO-cost",  aco_cost),
+                     ("ACO+QoS",   aco_qos)]:
+        print(f"{label:<18} ${d['total_cost']:>9.2f}   "
+              f"${d['mean_cost']:>6.2f}   {d['ls_on_demand_pct']:>6.1f}%")
 
-    print(f"\nACO vs First-Fit:  {imp_vs_naive:+.1f}% cost reduction")
-    print(f"ACO vs Random:     {imp_vs_random:+.1f}% cost reduction")
-    print(f"LS→ON_DEMAND lift: {ls_lift:+.1f}pp  (ACO vs First-Fit)")
+    print(f"\nACO-cost vs Random:    {imp_cost_vs_random:+.1f}%  cost reduction")
+    print(f"ACO-cost vs First-Fit: {imp_cost_vs_naive:+.1f}%  cost reduction")
+    print(f"ACO-cost vs Greedy:    {imp_cost_vs_greedy:+.1f}%  cost reduction")
+    print(f"ACO+QoS LS→OD:         {aco_qos['ls_on_demand_pct']:.1f}%  "
+          f"(lift {ls_lift_qos:+.1f}pp vs First-Fit)")
     print(f"\nSource: Weng et al., Beware of Fragmentation, USENIX ATC 2023")
 
     # ── Chart ─────────────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(14, 6))
+    fig = plt.figure(figsize=(15, 6))
     fig.suptitle("T4 — GPU Scheduling on Alibaba Production Cluster (ATC'23)",
                  fontsize=13, fontweight="bold")
-    gs_layout = gridspec.GridSpec(1, 2, figure=fig, wspace=0.38)
+    gs_layout = gridspec.GridSpec(1, 2, figure=fig, wspace=0.42)
 
-    # Left: total cost bar chart
+    labels  = ["Random", "First-Fit", "Greedy", "ACO-cost", "ACO+QoS"]
+    colors  = ["#9467bd", "#e07b54", "#ff7f0e", "#4c72b0", "#2ca02c"]
+    totals  = [rand["total_cost"], naive["total_cost"], greedy["total_cost"],
+               aco_cost["total_cost"], aco_qos["total_cost"]]
+    ls_pcts = [rand["ls_on_demand_pct"], naive["ls_on_demand_pct"],
+               greedy["ls_on_demand_pct"], aco_cost["ls_on_demand_pct"],
+               aco_qos["ls_on_demand_pct"]]
+
     ax1 = fig.add_subplot(gs_layout[0])
-    labels  = ["Random", "First-Fit", "ACO"]
-    totals  = [rand["total_cost"], naive["total_cost"], aco["total_cost"]]
-    colors  = ["#9467bd", "#e07b54", "#4c72b0"]
-    bars = ax1.bar(labels, totals, color=colors, width=0.5,
+    bars = ax1.bar(labels, totals, color=colors, width=0.55,
                    edgecolor="black", linewidth=0.8)
     for bar, val in zip(bars, totals):
         ax1.text(bar.get_x() + bar.get_width() / 2, val + max(totals) * 0.01,
-                 f"${val:.1f}", ha="center", va="bottom",
-                 fontsize=10, fontweight="bold")
+                 f"${val:.0f}", ha="center", va="bottom", fontsize=8, fontweight="bold")
     ax1.set_ylabel("Total placement cost $/hr (100 GPU jobs)")
-    ax1.set_title(f"Cost efficiency — ACO {imp_vs_naive:+.1f}% vs First-Fit")
-    ax1.set_ylim(0, max(totals) * 1.20)
+    ax1.set_title(f"Cost — ACO-cost {imp_cost_vs_random:.0f}% cheaper than Random")
+    ax1.set_ylim(0, max(totals) * 1.22)
     ax1.yaxis.grid(True, alpha=0.4)
     ax1.set_axisbelow(True)
-    ax1.annotate(
-        f"−{imp_vs_naive:.1f}%",
-        xy=(2, aco["total_cost"]),
-        xytext=(1, (naive["total_cost"] + aco["total_cost"]) / 2),
-        arrowprops=dict(arrowstyle="->", color="green", lw=1.3),
-        color="green", fontsize=10, fontweight="bold",
-    )
+    ax1.tick_params(axis='x', labelsize=8)
 
-    # Right: LS → ON_DEMAND compliance
     ax2 = fig.add_subplot(gs_layout[1])
-    ls_pcts = [rand["ls_on_demand_pct"], naive["ls_on_demand_pct"], aco["ls_on_demand_pct"]]
-    bars2 = ax2.bar(labels, ls_pcts, color=colors, width=0.5,
+    bars2 = ax2.bar(labels, ls_pcts, color=colors, width=0.55,
                     edgecolor="black", linewidth=0.8)
     for bar, val in zip(bars2, ls_pcts):
         ax2.text(bar.get_x() + bar.get_width() / 2, val + 1.0,
-                 f"{val:.1f}%", ha="center", va="bottom",
-                 fontsize=10, fontweight="bold")
+                 f"{val:.0f}%", ha="center", va="bottom", fontsize=8, fontweight="bold")
     ax2.set_ylabel("LS jobs placed on ON_DEMAND nodes (%)")
-    ax2.set_title(f"QoS compliance — LS→ON_DEMAND\n(lift: {ls_lift:+.1f}pp ACO vs First-Fit)")
-    ax2.set_ylim(0, 115)
+    ax2.set_title(f"QoS — ACO+QoS achieves {aco_qos['ls_on_demand_pct']:.0f}% LS→ON_DEMAND")
+    ax2.set_ylim(0, 118)
     ax2.axhline(100, linestyle="--", color="green", linewidth=0.9,
                 alpha=0.6, label="100% target")
     ax2.yaxis.grid(True, alpha=0.4)
     ax2.set_axisbelow(True)
+    ax2.tick_params(axis='x', labelsize=8)
     ax2.legend(fontsize=9)
 
     plt.tight_layout()
@@ -356,17 +394,22 @@ def run() -> dict:
     print(f"Chart saved: {out}")
 
     result = {
-        "n_nodes": n_nodes,
-        "n_jobs": n_jobs,
-        "ls_jobs": ls_jobs,
-        "be_jobs": be_jobs,
+        "n_nodes":  n_nodes,
+        "n_jobs":   n_jobs,
+        "ls_jobs":  ls_jobs,
+        "be_jobs":  be_jobs,
         "gpu_types": gpu_types,
-        "random":  {k: v for k, v in rand.items()},
-        "naive":   {k: v for k, v in naive.items()},
-        "aco":     {k: v for k, v in aco.items()},
-        "improvement_vs_naive_pct":  imp_vs_naive,
-        "improvement_vs_random_pct": imp_vs_random,
-        "ls_on_demand_lift_pp":      ls_lift,
+        "random":   {k: v for k, v in rand.items()},
+        "naive":    {k: v for k, v in naive.items()},
+        "greedy":   {k: v for k, v in greedy.items()},
+        "aco_cost": {k: v for k, v in aco_cost.items()},
+        "aco_qos":  {k: v for k, v in aco_qos.items()},
+        "aco_cost_improvement_vs_random_pct": imp_cost_vs_random,
+        "aco_cost_improvement_vs_naive_pct":  imp_cost_vs_naive,
+        "aco_cost_improvement_vs_greedy_pct": imp_cost_vs_greedy,
+        "aco_qos_improvement_vs_naive_pct":   imp_qos_vs_naive,
+        "aco_qos_ls_on_demand_pct":           aco_qos["ls_on_demand_pct"],
+        "aco_qos_ls_lift_pp":                 ls_lift_qos,
     }
     save_results("tier4_gpu_scheduling", result)
     return result

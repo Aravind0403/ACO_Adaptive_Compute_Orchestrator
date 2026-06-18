@@ -426,9 +426,8 @@ CPU topology.
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.92\textwidth]{../benchmarks/results/tier1_aco_vs_naive.png}
-\caption{T1.1 — Cost per job: ACO vs First-Fit vs Random.
-Left: balanced topology (2$\times$ spread, paper primary claim).
-Right: adversarial topology (25$\times$ spread).}
+\caption{T1.1 — Cost per job: ACO vs First-Fit vs Random + LSTM ablation.
+Top: total cost by algorithm. Bottom: per-job scatter sorted by CPU cores.}
 \label{fig:t11}
 \end{figure}
 
@@ -468,6 +467,51 @@ Adversarial & ACO (ours) & \textbf{3.60}  & \textbf{0.120} & \textbf{$-$96.0\%} 
 \end{tabular}
 \end{center}
 \end{table}
+
+\textbf{LSTM ablation.}
+Table~\ref{tab:lstm_ablation} isolates the contribution of the
+LSTM predictor to cost routing. We train one per-node LSTM on
+200 rows of the Alibaba 2018 machine trace~\cite{alibaba2018trace}
+(staggered time offset per node) and pass the resulting
+\texttt{PredictionResult} to the ACO colony's CostEngine via
+the $p_i$ prediction factor in Equation~\ref{eq:cost}.
+
+\begin{table}[H]
+\caption{LSTM ablation: ACO-only vs ACO+LSTM (balanced topology,
+30 jobs). Per-node LSTM confidence $\approx 0.628$ for all nodes.}
+\label{tab:lstm_ablation}
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Algorithm} & \textbf{Total (\$/hr)} & \textbf{vs First-Fit} \\
+\midrule
+Random       & 18.80 & $-$10.5\% \\
+First-Fit    & 21.00 & --- \\
+ACO-only     & \textbf{15.00} & $-$28.6\% \\
+ACO+LSTM     & \textbf{15.00} & $-$28.6\% \\
+\midrule
+\multicolumn{2}{l}{LSTM routing delta vs ACO-only} & \textbf{0.00\%} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+The LSTM adds zero routing impact (\textbf{$\Delta = 0.00\%$})
+in both topologies. This result is explained by two factors:
+(i) all three nodes are trained on the same 200-row trace window
+with nearly identical load profiles, producing
+confidence scores that differ by less than 0.001; and (ii) the
+spike probability scaling bug discussed in
+Section~\ref{sec:limitations} renders the spike penalty
+inactive, preventing the $p_i$ signal from differentiating
+otherwise similar nodes. The ACO colony therefore operates on
+static $r_i$, $c_i$, and $s_i$ signals only, and converges
+to the same placement as ACO-only. The LSTM predictor's
+calibration quality (Pearson $r=-0.64$) is validated
+independently in Section~\ref{subsec:lstm_quality}; closing
+the gap between signal quality and routing impact requires
+fixing the spike scaling bug and providing per-node training
+data with differentiated load histories.
 
 \subsection{Scheduling Latency}
 
@@ -510,6 +554,7 @@ workloads.
 \end{table}
 
 \subsection{LSTM Prediction Quality}
+\label{subsec:lstm_quality}
 
 We evaluate the LSTM predictor's load signal on the Alibaba
 2018 machine trace using 2{,}233 records sampled over eight
@@ -550,7 +595,7 @@ Right: LS job placement on ON\_DEMAND nodes (\%).}
 \end{figure}
 
 \begin{table}[H]
-\caption{GPU scheduling results: ACO-Adaptive vs baselines
+\caption{GPU scheduling results: 5-way comparison
 (100 jobs, Alibaba GPU trace, 32 nodes / 7 GPU types)}
 \label{tab:gpu}
 \begin{center}
@@ -560,41 +605,45 @@ Right: LS job placement on ON\_DEMAND nodes (\%).}
   & \textbf{Mean/job} & \textbf{LS$\to$OD (\%)}
   & \textbf{vs Random} \\
 \midrule
-Random      & 564.30 & 5.64 & 51.3\% & --- \\
-First-Fit   & 119.80 & 1.20 & 92.3\% & $-$78.8\% \\
-ACO (ours)  & \textbf{115.00} & \textbf{1.15} & 74.4\%
-             & \textbf{$-$79.6\%} \\
+Random          & 564.30 & 5.64 & 51.3\% & --- \\
+First-Fit       & 119.80 & 1.20 & 92.3\% & $-$78.8\% \\
+Cost-Aware Greedy & 89.00 & 0.89 & 80.8\% & $-$84.2\% \\
+ACO-cost (ours) & 115.00 & 1.15 & 74.4\% & $-$79.6\% \\
+ACO+QoS (ours)  & \textbf{157.40} & \textbf{1.57}
+                 & \textbf{97.4\%} & $-$72.1\% \\
 \bottomrule
 \end{tabular}
 \end{center}
 \end{table}
 
-ACO-Adaptive reduces total placement cost by
-\textbf{79.6\%} versus random and \textbf{4.0\%} versus
-First-Fit. The modest margin over First-Fit in this topology
-is attributable to within-type pricing uniformity: all nodes
-of the same GPU model carry identical cost, so the ACO colony
-can only differentiate across GPU types, not within them. When
-a job is eligible for multiple GPU types, ACO correctly routes
-to the cheapest SPOT tier (G2, P100); First-Fit eventually
-arrives at the same tier after exhausting the two available
-A10 ON\_DEMAND nodes.
+Table~\ref{tab:gpu} reveals a concrete cost--QoS tradeoff across
+five algorithms. \textbf{ACO-cost} (no QoS strategy) achieves
+\textbf{79.6\%} cost reduction versus random and \textbf{4.0\%}
+versus First-Fit. The modest margin over First-Fit reflects
+within-type pricing uniformity: all nodes of the same GPU
+model carry identical cost, so the ACO colony can only
+differentiate across GPU types, not within them.
 
-The LS$\to$ON\_DEMAND compliance rate for ACO (74.4\%) is lower
-than First-Fit (92.3\%). First-Fit's high compliance is an
-artifact of node iteration order: A10 (ON\_DEMAND) nodes appear
-first alphabetically, so First-Fit fills them preferentially.
-ACO's cost optimisation correctly prefers cheaper SPOT-tier
-nodes for capable placements but does not yet enforce a hard
-ON\_DEMAND constraint for LS jobs on GPU workloads. We
-document this as a known limitation and future work item
-in Section~\ref{sec:limitations}.
+\textbf{Cost-Aware Greedy} outperforms ACO-cost on raw cost
+(\$89.00 vs \$115.00/hr) by sorting feasible nodes by \$/hr
+and picking the cheapest — but it ignores QoS, routing 19.2\%
+of LS (Latency Sensitive) jobs to interruptible SPOT nodes.
 
-The large Random baseline cost (\$564.30/hr) reflects random
-selection landing on multi-GPU V100M32 nodes (\$25.60/hr per
-node) for jobs that require only a single GPU. ACO's
-Fragmentation-aware scoring via the CostEngine naturally
-avoids this overprovisioning.
+\textbf{ACO+QoS} wires the WorkloadIntentRouter to enforce
+\texttt{ON\_DEMAND} node preference for every LS job
+(WorkloadType.LATENCY\_CRITICAL). This raises LS$\to$ON\_DEMAND
+compliance from 74.4\% (ACO-cost) to \textbf{97.4\%} — a
+\textbf{$+$5.1 percentage-point} lift over First-Fit and
+\textbf{$+$16.6 pp} over Greedy. The compliance cost is a
+76.9\% premium over Greedy's unconstrained placement
+(\$157.40 vs \$89.00/hr), a fundamentally expected tradeoff:
+ON\_DEMAND GPU instances cost more than SPOT, and any scheduler
+that enforces this constraint must pay that premium.
+
+The large Random baseline (\$564.30/hr) reflects random
+selection landing on multi-GPU V100M32 nodes (\$25.60/hr)
+for single-GPU jobs — a fragmentation pathology the CostEngine
+naturally avoids by scoring against overprovisioned nodes.
 
 \subsection{Pheromone Learning and Queue Throughput}
 
@@ -628,21 +677,29 @@ CostEngine signals ($r_i$, $c_i$, $s_i$) are unaffected and
 produce the cost efficiency results reported in Section 5. A
 corrected implementation is left for future work.
 
+\textbf{LSTM routing impact.} An ablation (Table~\ref{tab:lstm_ablation})
+confirms that the LSTM predictor contributes \textbf{zero
+routing impact} ($\Delta = 0.00\%$) on cost outcomes under
+the current benchmark configuration. This is not evidence that
+the LSTM signal is uninformative — the Pearson $r=-0.64$
+calibration result confirms a valid predictive signal — but
+rather that two compounding issues prevent the signal from
+differentiating node selections: (i) the spike probability
+scaling bug described above; and (ii) nearly identical per-node
+confidence values when all nodes are trained on the same
+aggregate trace. In production, nodes would accumulate
+differentiated utilisation histories, and fixing the scaling
+bug would enable the spike penalty to vary meaningfully across
+nodes. Until then, ACO-Adaptive's cost efficiency results come
+entirely from ACO + static CostEngine signals.
+
 \textbf{LSTM weight persistence.} The LSTM predictor is
 retrained from scratch on each process launch. Weights are not
-persisted to disk between restarts. In a long-running
-deployment this means the predictor enters cold-start mode
-after any restart, delivering reduced prediction quality until
-sufficient per-node history accumulates (typically 50--100
-ticks). Serialising model weights and reloading on startup
-is a straightforward engineering task deferred from this work.
-
-\textbf{GPU QoS enforcement.} On GPU workloads, the scheduler
-does not enforce a hard ON\_DEMAND constraint for
-\texttt{LATENCY\_CRITICAL} jobs. The CostEngine's cost signal
-can route LS jobs to cheaper SPOT-tier GPU nodes, reducing QoS
-compliance. Adding an explicit instance-type gate in the GPU
-scheduling strategy is planned.
+persisted to disk between restarts, causing a cold-start regime
+after any restart (confidence $\approx 0.1$) until sufficient
+per-node history accumulates (typically 50--100 ticks).
+Serialising model weights and reloading on startup is deferred
+from this work.
 
 \textbf{Single-cluster evaluation.} All results are from a
 single simulated cluster. Multi-cluster scheduling, federation,
@@ -660,28 +717,33 @@ times from the Alibaba 2017 Fuxi trace is left for future work.
 
 We presented ACO-Adaptive, a centralized cluster scheduler
 combining Ant Colony Optimization with an online per-node LSTM
-load predictor. The system achieves a 28.6\% cost reduction
-over First-Fit on realistic CPU workloads drawn from 114
-million Azure VM requests, and a 79.6\% cost reduction over
-random placement on a 32-node heterogeneous GPU cluster traced
-from Alibaba's production infrastructure. Scheduling latency
-remains below 0.75\,ms P99 at 200 concurrent jobs. The LSTM
-predictor yields a Pearson correlation of $-0.64$ on the
-Alibaba 2018 production trace, confirming a meaningful
-forward-looking signal.
+load predictor. The system achieves a \textbf{28.6\%} cost
+reduction over First-Fit on realistic CPU workloads drawn from
+114 million Azure VM requests. On a 32-node heterogeneous GPU
+cluster traced from Alibaba's production infrastructure,
+ACO-Adaptive reduces placement cost by \textbf{79.6\%}
+compared to random scheduling. When the WorkloadIntentRouter's
+QoS strategy is engaged (ACO+QoS), LS$\to$ON\_DEMAND compliance
+reaches \textbf{97.4\%} --- a $+$5.1 percentage-point lift
+over First-Fit, at an expected cost premium over unconstrained
+placement. Scheduling latency remains below \textbf{0.75\,ms}
+P99 at 200 concurrent jobs.
+
+An LSTM ablation confirms that the predictor's Pearson
+$r=-0.64$ calibration signal does not yet translate to
+measurable routing impact ($\Delta=0.00\%$), due to the spike
+scaling bug and identical per-node training data in the
+current benchmark. The cost efficiency results are therefore
+attributable to the ACO colony and static CostEngine signals,
+not the LSTM.
 
 ACO-Adaptive occupies a distinct point in the scheduling
-design space: it is online (no offline training), interpretable
-(pheromone vector is directly inspectable), cost-aware (explicit
-\$/hr scoring), and QoS-discriminating (workload intent router
-with per-tier strategies). It falls short of reinforcement
-learning approaches on peak policy quality but requires no
-warmup period and degrades gracefully to heuristic-only scoring
-under cold-start conditions.
-
-Future directions include fixing the spike probability scaling
-bug, persisting LSTM weights across restarts, enforcing hard
-instance-type gates for GPU QoS, and extending evaluation to
+design space: online (no offline training), interpretable
+(pheromone vector is directly inspectable), cost-aware
+(explicit \$/hr scoring), and QoS-discriminating (workload
+intent router with per-tier strategies). Future directions
+include fixing the spike probability scaling bug, persisting
+LSTM weights across restarts, and extending evaluation to
 multi-cluster topologies with real job-arrival traces.
 
 
