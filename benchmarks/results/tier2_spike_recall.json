@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-06-18T15:40:13.574676",
+  "timestamp": "2026-06-18T17:26:12.980664",
   "results": {
     "n_spikes": 5,
     "n_caught": 0,
     "recall": 0.0,
-    "mean_at_onset": 0.2,
-    "mean_baseline": 0.19857015192135835
+    "mean_at_onset": 0.35099537504370004,
+    "mean_baseline": 0.22450006855659074
   }
 }

@@ -499,19 +499,21 @@ ACO+LSTM     & \textbf{15.00} & $-$28.6\% \\
 The LSTM adds zero routing impact (\textbf{$\Delta = 0.00\%$})
 in both topologies. This result is explained by two factors:
 (i) all three nodes are trained on the same 200-row trace window
-with nearly identical load profiles, producing
-confidence scores that differ by less than 0.001; and (ii) the
-spike probability scaling bug discussed in
-Section~\ref{sec:limitations} renders the spike penalty
-inactive, preventing the $p_i$ signal from differentiating
-otherwise similar nodes. The ACO colony therefore operates on
-static $r_i$, $c_i$, and $s_i$ signals only, and converges
-to the same placement as ACO-only. The LSTM predictor's
-calibration quality (Pearson $r=-0.64$) is validated
-independently in Section~\ref{subsec:lstm_quality}; closing
-the gap between signal quality and routing impact requires
-fixing the spike scaling bug and providing per-node training
-data with differentiated load histories.
+with nearly identical load profiles, producing per-node
+confidence scores that differ by less than 0.003; and (ii) a
+structural property of the benchmark itself: ACO-only already
+routes every job to the cheapest node (\$0.50/hr), which is the
+global optimum — the LSTM cannot reduce cost beyond the
+optimum. The LSTM's value appears on the QoS axis (avoiding
+nodes predicted to spike for latency-critical jobs), not on the
+cost axis when the cheapest node is already identified. The
+former spike probability scaling bug (a $\times 10$ unit error,
+now fixed) has been corrected; after correction the predictor
+shows a 1.56$\times$ lift at spike onsets vs baseline (see
+Section~\ref{sec:limitations}), confirming the mechanism is
+sound but that heterogeneous per-node training data is needed
+before routing differentiation is observable in a cost
+benchmark.
 
 \subsection{Scheduling Latency}
 
@@ -665,17 +667,24 @@ cycles.
 \label{sec:limitations}
 % =============================================================
 
-\textbf{Spike recall.} The spike probability component of the
-CostEngine ($p_i$ in Equation~\ref{eq:cost}) contains a unit
-scaling error in the current implementation: the recent
-utilisation mean is multiplied by a factor of 10, causing the
-gap signal to be perpetually negative and spike probability to
-remain at 0. Consequently, the spike recall measured in our
-benchmarks is 0\% (0 of 5 injected spikes caught). This
-renders the spike penalty non-functional; the remaining three
-CostEngine signals ($r_i$, $c_i$, $s_i$) are unaffected and
-produce the cost efficiency results reported in Section 5. A
-corrected implementation is left for future work.
+\textbf{Spike recall.} The spike probability component
+($p_i$ in Equation~\ref{eq:cost}) previously contained a
+unit scaling error: the recent CPU utilisation mean (in raw
+CPU cores) was multiplied by $\times 10$, inflating it above
+any valid LSTM prediction and making \texttt{spike\_probability}
+perpetually zero. This bug has been corrected in the submitted
+implementation. After the fix, the predictor shows a
+1.56$\times$ signal lift between spike-onset ticks
+(mean spike\_prob $= 0.351$) and baseline ticks
+(mean $= 0.225$) across 5 injected spike events. However,
+hard-threshold recall at the default threshold of 0.4 remains
+0 of 5: the average spike probability at onset does not yet
+exceed the detection threshold, as the LSTM requires more
+per-node training data and more heterogeneous utilisation
+histories to produce strongly differentiated predictions.
+The three remaining CostEngine signals ($r_i$, $c_i$, $s_i$)
+are unaffected and produce all cost efficiency results
+reported in Section~5.
 
 \textbf{LSTM routing impact.} An ablation (Table~\ref{tab:lstm_ablation})
 confirms that the LSTM predictor contributes \textbf{zero
@@ -742,9 +751,11 @@ design space: online (no offline training), interpretable
 (pheromone vector is directly inspectable), cost-aware
 (explicit \$/hr scoring), and QoS-discriminating (workload
 intent router with per-tier strategies). Future directions
-include fixing the spike probability scaling bug, persisting
-LSTM weights across restarts, and extending evaluation to
-multi-cluster topologies with real job-arrival traces.
+include persisting LSTM weights across restarts, supplying
+per-node training data with heterogeneous load histories to
+realise LSTM-driven cost routing differentiation, and
+extending evaluation to multi-cluster topologies with real
+job-arrival traces.
 
 
 % =============================================================

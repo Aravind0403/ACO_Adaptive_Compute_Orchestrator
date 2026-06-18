@@ -504,12 +504,12 @@ class WorkloadPredictor:
             float in [0.0, 1.0].
         """
         history = profile.cpu_cores_history
-        # Estimate recent mean utilisation (cores → %, rough ×10 factor)
+        # pred_cpu and cpu_cores_history are both in raw CPU cores — compare directly.
         recent_cores = history[-LOOKBACK:] if len(history) >= LOOKBACK else history
-        recent_mean_util = (sum(recent_cores) / len(recent_cores)) * 10.0 if recent_cores else 0.0
-        recent_mean_util = max(recent_mean_util, 1.0)   # avoid div-by-zero
+        recent_mean = (sum(recent_cores) / len(recent_cores)) if recent_cores else 0.0
+        recent_mean = max(recent_mean, 1e-3)   # avoid div-by-zero
 
-        gap = (pred_cpu - recent_mean_util) / recent_mean_util
+        gap = (pred_cpu - recent_mean) / recent_mean
         spike_prob = max(0.0, min(1.0, gap))
 
         # Burst-factor boost: if this workload type historically bursts, be more cautious
