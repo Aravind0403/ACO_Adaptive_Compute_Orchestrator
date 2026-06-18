@@ -1,0 +1,104 @@
+\relax 
+\@writefile{toc}{\contentsline {title}{ACO-Adaptive: Ant Colony Optimization with LSTM-Guided\unskip \ \ignorespaces  Predictive Resource Placement in Heterogeneous GPU Clusters}{1}{}\protected@file@percent }
+\@writefile{toc}{\authcount {1}}
+\@writefile{toc}{\contentsline {author}{No Author Given}{1}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{}\protected@file@percent }
+\citation{verma2015borg}
+\citation{schwarzkopf2013omega}
+\citation{hindman2011mesos}
+\citation{vavilapalli2013yarn}
+\citation{burns2016borg}
+\citation{gog2016firmament}
+\citation{mao2016deeprm}
+\citation{mao2019decima}
+\citation{xiao2018gandiva}
+\citation{gu2019tiresias}
+\citation{verma2015borg}
+\citation{schwarzkopf2013omega}
+\citation{hindman2011mesos}
+\citation{vavilapalli2013yarn}
+\citation{burns2016borg}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Production Cluster Schedulers}{2}{}\protected@file@percent }
+\citation{gog2016firmament}
+\citation{grandl2014tetris}
+\citation{delimitrou2013paragon}
+\citation{delimitrou2014quasar}
+\citation{ousterhout2013sparrow}
+\citation{mao2016deeprm}
+\citation{mao2019decima}
+\citation{xiao2018gandiva}
+\citation{gu2019tiresias}
+\citation{weng2023beware}
+\citation{dorigo1997ant}
+\citation{dorigo2004aco}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Cost- and Quality-Aware Scheduling}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Reinforcement Learning Schedulers}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}GPU Cluster Schedulers}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Ant Colony Optimisation}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}System Design}{4}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces ACO-Adaptive system architecture. Dashed arrows denote asynchronous telemetry; solid arrows denote synchronous scheduling decisions}}{4}{}\protected@file@percent }
+\newlabel{fig:arch}{{1}{4}{}{figure.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}ACO Colony Engine}{4}{}\protected@file@percent }
+\newlabel{eq:aco}{{1}{4}{}{equation.1}{}}
+\citation{weng2023beware}
+\citation{alibaba2018trace}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Cost Engine}{5}{}\protected@file@percent }
+\newlabel{eq:cost}{{2}{5}{}{equation.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}LSTM Load Predictor}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Workload Intent Router}{5}{}\protected@file@percent }
+\citation{hadary2020protean}
+\citation{alibaba2018trace}
+\citation{weng2023beware}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Telemetry Collector and Trace Adapter}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Node Agent and REST API}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Experimental Setup}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Cluster Topologies}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Workload Traces}{6}{}\protected@file@percent }
+\citation{verma2015borg}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Baselines}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Evaluation}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Cost Efficiency on CPU Workloads}{7}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces T1.1 — Cost per job: ACO vs First-Fit vs Random. Left: balanced topology (2$\times $ spread, paper primary claim). Right: adversarial topology (25$\times $ spread).}}{7}{}\protected@file@percent }
+\newlabel{fig:t11}{{2}{7}{}{figure.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Cost efficiency: ACO-Adaptive vs baselines (30 jobs, Azure VM size distribution)}}{8}{}\protected@file@percent }
+\newlabel{tab:cost}{{1}{8}{}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Scheduling Latency}{8}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces T1.3 — P99 scheduling latency vs concurrent job burst size. The dashed line marks the 10\,ms SLA target.}}{9}{}\protected@file@percent }
+\newlabel{fig:latency}{{3}{9}{}{figure.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces P99 and mean scheduling latency by burst size}}{9}{}\protected@file@percent }
+\newlabel{tab:latency}{{2}{9}{}{table.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}LSTM Prediction Quality}{9}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces T2.2 — LSTM confidence calibration on Alibaba 2018 production trace. Higher predicted utilisation correlates with lower observed idle capacity (Pearson $r = -0.64$).}}{10}{}\protected@file@percent }
+\newlabel{fig:lstm}{{4}{10}{}{figure.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}GPU-Aware Scheduling on Production Workloads}{10}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces T4.1 — GPU scheduling on the Alibaba production cluster (ATC'23). Left: total placement cost (100 GPU jobs). Right: LS job placement on ON\_DEMAND nodes (\%).}}{10}{}\protected@file@percent }
+\newlabel{fig:gpu}{{5}{10}{}{figure.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces GPU scheduling results: ACO-Adaptive vs baselines (100 jobs, Alibaba GPU trace, 32 nodes / 7 GPU types)}}{11}{}\protected@file@percent }
+\newlabel{tab:gpu}{{3}{11}{}{table.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Pheromone Learning and Queue Throughput}{11}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Limitations}{11}{}\protected@file@percent }
+\newlabel{sec:limitations}{{6}{11}{}{section.6}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion}{12}{}\protected@file@percent }
+\bibcite{dorigo1997ant}{1}
+\bibcite{verma2015borg}{2}
+\bibcite{schwarzkopf2013omega}{3}
+\bibcite{gog2016firmament}{4}
+\bibcite{grandl2014tetris}{5}
+\bibcite{mao2019decima}{6}
+\bibcite{mao2016deeprm}{7}
+\bibcite{xiao2018gandiva}{8}
+\bibcite{gu2019tiresias}{9}
+\bibcite{alibaba2018trace}{10}
+\bibcite{hadary2020protean}{11}
+\bibcite{weng2023beware}{12}
+\bibcite{hochreiter1997lstm}{13}
+\bibcite{burns2016borg}{14}
+\bibcite{vavilapalli2013yarn}{15}
+\bibcite{dorigo2004aco}{16}
+\@writefile{toc}{\contentsline {subsubsection}{Declaration on Generative AI.}{13}{}\protected@file@percent }
+\bibcite{delimitrou2013paragon}{17}
+\bibcite{delimitrou2014quasar}{18}
+\bibcite{ousterhout2013sparrow}{19}
+\bibcite{hindman2011mesos}{20}
+\gdef \@abspage@last{14}
