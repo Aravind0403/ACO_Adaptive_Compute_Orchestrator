@@ -31,7 +31,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from orchestrator.control_plane.orchestration_service import OrchestratorService
-from benchmarks._helpers import RESULTS_DIR
+from benchmarks._helpers import RESULTS_DIR, save_results
 
 
 # ── Benchmark ─────────────────────────────────────────────────────────────────
@@ -140,6 +140,7 @@ def run() -> dict:
     plt.close(fig)
     print(f"Chart saved: {out}")
 
+    save_results("tier1_p99_latency", {str(k): v for k, v in results.items()})
     return results
 
 

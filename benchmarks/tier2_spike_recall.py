@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from orchestrator.control_plane.predictor import WorkloadPredictor
 from orchestrator.shared.telemetry import WorkloadProfile, ResourceSample
-from benchmarks._helpers import TRACE_CSV, RESULTS_DIR
+from benchmarks._helpers import TRACE_CSV, RESULTS_DIR, save_results
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -188,13 +188,15 @@ def run() -> dict:
     plt.close(fig)
     print(f"Chart saved: {out}")
 
-    return {
+    result = {
         "n_spikes": n_spikes,
         "n_caught": n_caught,
         "recall": recall,
-        "mean_at_onset": mean_at_onset,
-        "mean_baseline": mean_baseline,
+        "mean_at_onset": float(mean_at_onset),
+        "mean_baseline": float(mean_baseline),
     }
+    save_results("tier2_spike_recall", result)
+    return result
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from orchestrator.control_plane.orchestration_service import OrchestratorService
-from benchmarks._helpers import RESULTS_DIR
+from benchmarks._helpers import RESULTS_DIR, save_results
 
 
 # ── Benchmark ─────────────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ def run() -> dict:
     plt.close(fig)
     print(f"Chart saved: {out}")
 
-    return {
+    result = {
         "n_active_at_saturation": n_active,
         "initial_depth": initial_depth,
         "final_depth": final_depth,
@@ -227,6 +227,8 @@ def run() -> dict:
         "total_drain_ms": total_drain_ms,
         "drain_rate_per_s": drain_rate,
     }
+    save_results("tier3_queue_drain", result)
+    return result
 
 
 if __name__ == "__main__":

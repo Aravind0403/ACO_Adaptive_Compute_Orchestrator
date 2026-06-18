@@ -1,0 +1,39 @@
+{
+  "timestamp": "2026-06-18T15:40:27.799056",
+  "results": {
+    "n_nodes": 32,
+    "n_jobs": 100,
+    "ls_jobs": 78,
+    "be_jobs": 22,
+    "gpu_types": [
+      "A10",
+      "G2",
+      "G3",
+      "P100",
+      "T4",
+      "V100M16",
+      "V100M32"
+    ],
+    "random": {
+      "total_cost": 564.3000000000001,
+      "mean_cost": 5.643000000000001,
+      "ls_on_demand_pct": 51.28205128205128,
+      "ls_jobs": 78
+    },
+    "naive": {
+      "total_cost": 119.8,
+      "mean_cost": 1.198,
+      "ls_on_demand_pct": 92.3076923076923,
+      "ls_jobs": 78
+    },
+    "aco": {
+      "total_cost": 115.0,
+      "mean_cost": 1.15,
+      "ls_on_demand_pct": 74.35897435897436,
+      "ls_jobs": 78
+    },
+    "improvement_vs_naive_pct": 4.00667779632721,
+    "improvement_vs_random_pct": 79.62076909445331,
+    "ls_on_demand_lift_pp": -17.948717948717942
+  }
+}

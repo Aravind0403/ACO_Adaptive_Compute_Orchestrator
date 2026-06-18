@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-06-18T15:39:58.725729",
+  "results": {
+    "adversarial": {
+      "label": "Adversarial topology (25\u00d7 spread)",
+      "random_total": 45.28,
+      "naive_total": 90.0,
+      "aco_total": 3.5999999999999996,
+      "improvement_vs_naive_pct": 96.00000000000001,
+      "improvement_vs_random_pct": 92.04946996466431,
+      "passed": true
+    },
+    "balanced": {
+      "label": "Balanced topology (2\u00d7 spread \u2014 paper primary claim)",
+      "random_total": 18.8,
+      "naive_total": 21.0,
+      "aco_total": 15.0,
+      "improvement_vs_naive_pct": 28.57142857142857,
+      "improvement_vs_random_pct": 20.212765957446813,
+      "passed": true
+    }
+  }
+}

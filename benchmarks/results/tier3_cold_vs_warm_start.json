@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-06-18T15:40:27.647263",
+  "results": {
+    "cold_early_mean": 0.12,
+    "warm_early_mean": 0.12,
+    "early_improvement_pct": 0.0,
+    "cold_all_mean": 0.12,
+    "warm_all_mean": 0.12,
+    "advantage_detected": false
+  }
+}

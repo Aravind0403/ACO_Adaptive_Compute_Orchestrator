@@ -30,7 +30,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from orchestrator.control_plane.orchestration_service import OrchestratorService
-from benchmarks._helpers import AZURE_JOB_SIZES, RESULTS_DIR, make_batch_job, placement_cost
+from benchmarks._helpers import AZURE_JOB_SIZES, RESULTS_DIR, make_batch_job, placement_cost, save_results
 
 
 # ── Rolling mean helper ────────────────────────────────────────────────────────
@@ -183,13 +183,15 @@ def run() -> dict:
     plt.close(fig)
     print(f"Chart saved: {out}")
 
-    return {
+    result = {
         "n_placed": n_placed,
         "mean_early": mean_early,
         "mean_late": mean_late,
         "learning_detected": learning,
         "final_pheromone": final_pheromone,
     }
+    save_results("tier1_pheromone_curve", result)
+    return result
 
 
 if __name__ == "__main__":

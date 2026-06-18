@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from orchestrator.control_plane.predictor import WorkloadPredictor
 from orchestrator.shared.telemetry import WorkloadProfile, ResourceSample
-from benchmarks._helpers import TRACE_CSV, RESULTS_DIR
+from benchmarks._helpers import TRACE_CSV, RESULTS_DIR, save_results
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -189,13 +189,15 @@ def run() -> dict:
     plt.close(fig)
     print(f"Chart saved: {out}")
 
-    return {
+    result = {
         "n_records": n_records,
         "pearson_r": pearson_r,
         "calibration_good": calibration_good,
         "bucket_means": bucket_means,
         "bucket_counts": bucket_counts,
     }
+    save_results("tier2_confidence_calibration", result)
+    return result
 
 
 if __name__ == "__main__":

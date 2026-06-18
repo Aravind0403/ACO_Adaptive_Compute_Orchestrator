@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-06-18T15:39:59.214440",
+  "results": {
+    "n_placed": 200,
+    "mean_early": 0.12,
+    "mean_late": 0.12,
+    "learning_detected": true,
+    "final_pheromone": {
+      "node-cpu-01": 0.01,
+      "node-arm-02": 3.1622776601683786,
+      "node-api-03": 0.01,
+      "node-gpu-04": 0.01,
+      "node-gpu-05": 0.01
+    }
+  }
+}

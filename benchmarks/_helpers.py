@@ -12,6 +12,8 @@ Shared fixtures and utilities used by all benchmark scripts.
 
 from __future__ import annotations
 
+import datetime
+import json
 import random
 from pathlib import Path
 from typing import List
@@ -25,21 +27,31 @@ RESULTS_DIR.mkdir(exist_ok=True)
 TRACE_CSV = _HERE.parent / "tests" / "fixtures" / "alibaba_machine_usage_300s.csv"
 
 
-# ── Azure VM size distribution (weighted, seed=42) ────────────────────────────
-# Mirrors real Azure VM core count distribution:
-#   Standard_B2s  →  2 cores  (40%)
-#   Standard_B4ms →  4 cores  (30%)
-#   Standard_D8s  →  8 cores  (20%)
-#   Standard_D16s → 16 cores  ( 7%)
-#   Standard_D32s → 32 cores  ( 3%)
+# ── Azure VM size distribution (AzureTracesForPacking2020, Protean OSDI'20) ───
+# Empirical weights derived from 114M VM requests in packing_trace_zone_a_v1.sqlite.
+# Reference machine: 48 vCPUs (fraction × 48 → core count).
+# Sub-1-core micro-VMs (23.2% of all requests) excluded — not relevant for
+# compute scheduling. Remaining ≥1-core requests normalised to 100%.
+#
+# Observed bimodal distribution (peaks at 2c and 8c):
+#   1 core  → 18%   (frac ≈ 0.021)
+#   2 core  → 45%   (frac ≈ 0.042)   ← dominant
+#   4 core  →  8%   (frac ≈ 0.083)
+#   8 core  → 24%   (frac ≈ 0.167)   ← second peak
+#  16 core  →  3%   (frac ≈ 0.333)
+#  32 core  →  2%   (frac ≈ 0.667)
+#
+# Citation: Hadary et al., "Protean: VM Allocation Service at Scale",
+#           OSDI 2020. Dataset: AzureTracesForPacking2020.
 
 _rng = random.Random(42)
-_SIZES: List[int] = [2, 4, 8, 16, 32]
-_WEIGHTS: List[float] = [0.40, 0.30, 0.20, 0.07, 0.03]
+_SIZES: List[int] = [1, 2, 4, 8, 16, 32]
+_WEIGHTS: List[float] = [0.18, 0.45, 0.08, 0.24, 0.03, 0.02]
 
 AZURE_JOB_SIZES: List[int] = _rng.choices(_SIZES, weights=_WEIGHTS, k=500)
 """
-Pre-generated 500-item list of CPU core counts drawn from the Azure VM distribution.
+Pre-generated 500-item list of CPU core counts drawn from the empirical Azure VM
+size distribution (AzureTracesForPacking2020, Protean OSDI'20).
 Benchmarks index into this list (e.g. AZURE_JOB_SIZES[:30]) for reproducibility.
 Memory is always cpu_cores * 2.0 GB.
 """
@@ -71,6 +83,36 @@ def make_batch_job(
         "priority": max(1, min(100, int(priority))),
         "preemptible": True,
     }
+
+
+# ── Result persistence ────────────────────────────────────────────────────────
+
+class _NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy scalars and arrays."""
+    def default(self, obj):
+        try:
+            import numpy as np
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+        except ImportError:
+            pass
+        return super().default(obj)
+
+
+def save_results(name: str, data: dict) -> None:
+    """Persist benchmark numeric results to JSON for paper tables."""
+    out = RESULTS_DIR / f"{name}.json"
+    payload = {
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "results": data,
+    }
+    with open(out, "w") as f:
+        json.dump(payload, f, indent=2, cls=_NumpyEncoder)
+    print(f"Results saved: {out}")
 
 
 # ── Cost lookup ───────────────────────────────────────────────────────────────

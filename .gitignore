@@ -7,3 +7,11 @@ __pycache__/
 .idea/
 venv/
 .env
+.DS_Store
+.claude/
+# Large dataset files (download separately from Zenodo/Azure)
+*.sqlite
+# Root-level fixture duplicates (copies live in tests/fixtures/ instead)
+/openb_node_list_gpu_node.csv
+/openb_pod_list_gpuspec33.csv
+/openb_pod_list_multigpu50.csv

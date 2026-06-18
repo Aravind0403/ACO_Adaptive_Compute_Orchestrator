@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-06-18T15:40:27.316247",
+  "results": {
+    "n_active_at_saturation": 72,
+    "initial_depth": 35,
+    "final_depth": 0,
+    "drain_cycles": 12,
+    "total_drain_ms": 26.587125001242384,
+    "drain_rate_per_s": 1316.426653817007
+  }
+}

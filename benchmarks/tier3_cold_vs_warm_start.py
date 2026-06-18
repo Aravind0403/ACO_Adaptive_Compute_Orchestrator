@@ -32,7 +32,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from orchestrator.control_plane.orchestration_service import OrchestratorService
-from benchmarks._helpers import AZURE_JOB_SIZES, RESULTS_DIR, make_batch_job, placement_cost
+from benchmarks._helpers import AZURE_JOB_SIZES, RESULTS_DIR, make_batch_job, placement_cost, save_results
 
 
 # ── Rolling mean ──────────────────────────────────────────────────────────────
@@ -174,7 +174,7 @@ def run() -> dict:
     plt.close(fig)
     print(f"Chart saved: {out}")
 
-    return {
+    result = {
         "cold_early_mean": cold_early,
         "warm_early_mean": warm_early,
         "early_improvement_pct": early_improvement,
@@ -182,6 +182,8 @@ def run() -> dict:
         "warm_all_mean": warm_all,
         "advantage_detected": advantage_detected,
     }
+    save_results("tier3_cold_vs_warm_start", result)
+    return result
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """
 benchmarks/run_all.py
 ─────────────────────
-Run all 7 benchmark scripts in tier order and print a final summary table.
+Run all 8 benchmark scripts in tier order and print a final summary table.
 Each script is imported and run() is called directly (same process).
 
 Usage:
@@ -34,6 +34,9 @@ from benchmarks import tier2_confidence_calibration
 from benchmarks import tier3_queue_drain
 from benchmarks import tier3_cold_vs_warm_start
 
+# Tier 4
+from benchmarks import tier4_gpu_scheduling
+
 
 BENCHMARKS = [
     ("T1.1", "ACO vs Naive (Azure VM Distribution)",    tier1_aco_vs_naive),
@@ -43,15 +46,17 @@ BENCHMARKS = [
     ("T2.2", "Confidence Calibration",                  tier2_confidence_calibration),
     ("T3.1", "Queue Drain Under Saturation",            tier3_queue_drain),
     ("T3.2", "Cold vs Warm Pheromone Start",            tier3_cold_vs_warm_start),
+    ("T4.1", "GPU Scheduling (Alibaba GPU ATC'23)",     tier4_gpu_scheduling),
 ]
 
 
 def _status_from(tag: str, result: dict) -> str:
     """Extract a one-line status string from a benchmark result dict."""
     if tag == "T1.1":
-        pct = result.get("improvement_pct", 0.0)
-        ok  = result.get("passed", False)
-        return f"{'PASS' if ok else 'FAIL'}  ACO {pct:.1f}% cheaper than Naive"
+        bal = result.get("balanced", result)  # new nested format; fall back to flat
+        pct = bal.get("improvement_vs_naive_pct", bal.get("improvement_pct", 0.0))
+        ok  = bal.get("passed", False)
+        return f"{'PASS' if ok else 'FAIL'}  ACO {pct:.1f}% cheaper than First-Fit (balanced topology)"
     if tag == "T1.2":
         ok = result.get("learning_detected", False)
         early = result.get("mean_early", 0.0)
@@ -79,6 +84,14 @@ def _status_from(tag: str, result: dict) -> str:
         pct = result.get("early_improvement_pct", 0.0)
         ok  = result.get("advantage_detected", False)
         return f"{'DETECTED' if ok else 'NOT DETECTED'}  early cost {pct:+.1f}% (warm vs cold)"
+    if tag == "T4.1":
+        imp_naive  = result.get("improvement_vs_naive_pct", 0.0)
+        imp_random = result.get("improvement_vs_random_pct", 0.0)
+        n_nodes    = result.get("n_nodes", 0)
+        gpu_types  = result.get("gpu_types", [])
+        return (f"ACO {imp_naive:+.1f}% vs First-Fit, "
+                f"{imp_random:+.1f}% vs Random  "
+                f"({n_nodes} nodes, {len(gpu_types)} GPU types)")
     return str(result)
 
 
