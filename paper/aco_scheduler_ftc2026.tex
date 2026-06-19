@@ -393,8 +393,10 @@ over eight days, comprising 2{,}243 records.
 
 \textbf{Alibaba GPU Trace (ATC'23).} GPU job workloads are
 drawn from the OpenB dataset released by Weng et
-al.~\cite{weng2023beware}. We use \texttt{openb\_node\_list\_gpu\_node.csv}
-(1{,}213 nodes) and \texttt{openb\_pod\_list\_gpuspec33.csv}
+al.~\cite{weng2023beware}. We use \texttt{openb\_node\_list\_gpu\_node.csv},
+the GPU-capable subset of the 1{,}523-node OpenB cluster
+(1{,}213 GPU nodes; the remainder are CPU-only machines),
+and \texttt{openb\_pod\_list\_gpuspec33.csv}
 (8{,}152 tasks with QoS labels and GPU type constraints).
 After filtering to completed or running jobs requiring at
 least one GPU, 4{,}334 usable tasks remain; 1{,}517 carry
@@ -841,10 +843,11 @@ allocation service at scale. In: OSDI '20, pp. 845--861.
 USENIX Association (2020)
 
 \bibitem{weng2023beware}
-Weng, Q., Xiao, W., Yu, Y., Wang, W., Wang, C., He, J., et al.:
+Weng, Q., Yang, L., Yu, Y., Wang, W., Tang, X., Yang, G., Zhang, L.:
 Beware of fragmentation: scheduling GPU-sharing workloads with
-fragmentation gradient descent. In: USENIX ATC '23,
-pp. 995--1008. USENIX Association (2023)
+fragmentation gradient descent. In: 2023 USENIX Annual Technical
+Conference (USENIX ATC '23), pp. 995--1008. USENIX Association,
+Boston, MA (2023)
 
 \bibitem{hochreiter1997lstm}
 Hochreiter, S., Schmidhuber, J.: Long short-term memory.
