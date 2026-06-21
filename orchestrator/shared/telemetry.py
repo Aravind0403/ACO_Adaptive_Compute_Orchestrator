@@ -31,7 +31,7 @@ Over time, the scheduler learns:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
@@ -54,7 +54,7 @@ class ResourceSample(BaseModel):
         scheduling_latency_ms → How long it took to schedule this job.
                                 Used to track P99 scheduling latency over time.
     """
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     cpu_cores_used: float = Field(..., ge=0)
     memory_gb_used: float = Field(..., ge=0)
     gpu_util_pct: Optional[float] = Field(None, ge=0, le=100)
@@ -128,7 +128,7 @@ class WorkloadProfile(BaseModel):
         description="P99 scheduling latency across all samples. Target: <10ms."
     )
 
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def add_sample(self, sample: ResourceSample) -> None:
         """
@@ -178,7 +178,7 @@ class WorkloadProfile(BaseModel):
         p99_idx = max(0, int(0.99 * n) - 1)
         self.p99_latency_ms = sorted_lat[p99_idx]
 
-        self.last_updated = datetime.utcnow()
+        self.last_updated = lambda: datetime.now(timezone.utc)()
 
     @property
     def cpu_cores_history(self) -> List[float]:

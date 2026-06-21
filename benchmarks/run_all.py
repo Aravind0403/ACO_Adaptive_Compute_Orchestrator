@@ -37,6 +37,9 @@ from benchmarks import tier3_cold_vs_warm_start
 # Tier 4
 from benchmarks import tier4_gpu_scheduling
 
+# Tier 5
+from benchmarks import tier5_lstm_routing_impact
+
 
 BENCHMARKS = [
     ("T1.1", "ACO vs Naive (Azure VM Distribution)",    tier1_aco_vs_naive),
@@ -47,6 +50,7 @@ BENCHMARKS = [
     ("T3.1", "Queue Drain Under Saturation",            tier3_queue_drain),
     ("T3.2", "Cold vs Warm Pheromone Start",            tier3_cold_vs_warm_start),
     ("T4.1", "GPU Scheduling (Alibaba GPU ATC'23)",     tier4_gpu_scheduling),
+    ("T5.1", "LSTM Routing Under Heterogeneous Load",   tier5_lstm_routing_impact),
 ]
 
 
@@ -94,6 +98,15 @@ def _status_from(tag: str, result: dict) -> str:
                 f"{imp_random:+.1f}% vs Random | "
                 f"ACO+QoS LS→OD {qos_pct:.0f}%  "
                 f"({n_nodes} nodes, {len(gpu_types)} GPU types)")
+    if tag == "T5.1":
+        ok   = result.get("passed", False)
+        pp   = result.get("routing_improvement_pp", 0.0)
+        gap  = result.get("spike_prob_gap", 0.0)
+        no_p = result.get("no_pred_stable_pct", 0.0)
+        wi_p = result.get("with_pred_stable_pct", 0.0)
+        return (f"{'DEMONSTRATED' if ok else 'WEAK'}  "
+                f"spike_prob gap={gap:+.3f} | "
+                f"stable routed: {no_p:.0f}% → {wi_p:.0f}% ({pp:+.1f}pp)")
     return str(result)
 
 

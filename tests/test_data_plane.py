@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -78,7 +78,7 @@ def _make_job_execution(
 ) -> JobExecution:
     """Create a JobExecution that is registered in svc.active_jobs."""
     job_request = _make_job_request(**kwargs)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     ex = JobExecution(
         job_id=job_request.job_id,
         job_request=job_request,

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-18T17:12:22.393943",
+  "timestamp": "2026-06-18T17:26:52.843407",
   "results": {
     "adversarial": {
       "label": "Adversarial topology (25\u00d7 spread)",
@@ -12,9 +12,9 @@
       "lstm_improvement_vs_naive_pct": 96.00000000000001,
       "lstm_delta_vs_aco_pct": 0.0,
       "lstm_confidence_per_node": {
-        "n-exp": 0.628,
+        "n-exp": 0.627,
         "n-mid": 0.628,
-        "n-cheap": 0.629
+        "n-cheap": 0.628
       },
       "passed": true
     },
@@ -30,8 +30,8 @@
       "lstm_delta_vs_aco_pct": 0.0,
       "lstm_confidence_per_node": {
         "nb-mid": 0.628,
-        "nb-exp": 0.629,
-        "nb-cheap": 0.629
+        "nb-exp": 0.628,
+        "nb-cheap": 0.63
       },
       "passed": true
     }

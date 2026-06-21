@@ -19,7 +19,7 @@ Read top-to-bottom. Each model builds on the ones above it.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -155,7 +155,7 @@ class NodeTelemetry(BaseModel):
     """
     node_id: str = Field(..., description="Which node this snapshot is from")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="UTC time of this reading"
     )
 
@@ -666,7 +666,7 @@ class PredictionResult(BaseModel):
         ..., ge=0.0, le=1.0,
         description="Model confidence. Low = prediction is uncertain."
     )
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

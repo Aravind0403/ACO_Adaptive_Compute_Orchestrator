@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-06-21T08:03:29.862583",
+  "results": {
+    "stable_window": "rows 1300\u20131380",
+    "volatile_window": "rows 1065\u20131145",
+    "stable_cpu_mean_pct": 30.28,
+    "stable_cpu_std_pct": 3.17,
+    "volatile_cpu_mean_pct": 36.72,
+    "volatile_cpu_std_pct": 7.09,
+    "volatile_rise_pp": 9.37,
+    "spike_prob_stable": 0.078,
+    "spike_prob_volatile": 0.2,
+    "spike_prob_gap": 0.122,
+    "confidence_stable": 0.555,
+    "confidence_volatile": 0.543,
+    "n_trials": 30,
+    "no_pred_stable_pct": 30.0,
+    "with_pred_stable_pct": 100.0,
+    "routing_improvement_pp": 70.0,
+    "passed": true
+  }
+}

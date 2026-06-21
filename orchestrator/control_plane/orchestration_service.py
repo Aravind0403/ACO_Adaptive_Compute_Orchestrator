@@ -39,10 +39,11 @@ submit_job() and complete_job().
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from orchestrator.shared.models import (
@@ -81,6 +82,13 @@ QUEUE_MAX_DEPTH: int = 50
 
 QUEUE_TTL_S: float = 60.0
 """Time-to-live for queued jobs. Jobs older than this are expired on drain."""
+
+# ── Cross-call pheromone update parameters ────────────────────────────────────
+_PHEROMONE_RHO: float = 0.1
+"""Evaporation rate applied to all nodes after each scheduling decision."""
+
+_PHEROMONE_Q: float = 1.0
+"""Deposit amount added to the chosen node's pheromone level."""
 
 
 class OrchestratorService:
@@ -157,6 +165,14 @@ class OrchestratorService:
         # Can be serialised/restored via save_pheromone_snapshot() /
         # load_pheromone_snapshot() to survive API process restarts.
         self._node_pheromone: Dict[str, float] = {}   # populated after cluster init
+
+        # ── Thread safety ─────────────────────────────────────────────────────
+        # RLock (reentrant) because drain_pending_queue() calls submit_job()
+        # internally — a plain Lock would deadlock on that second acquisition.
+        # Protects: node_state, active_jobs, completed_jobs, _pending_queue,
+        #           _node_pheromone, _node_workload_map, _prediction_cache.
+        # NOT held during LSTM training (refit_all_predictors splits around it).
+        self._state_lock = threading.RLock()
 
         # ── Bootstrap cluster ─────────────────────────────────────────────────
         self._initialize_mock_nodes()
@@ -278,8 +294,9 @@ class OrchestratorService:
         """
         job_id = f"job-{uuid.uuid4().hex[:8]}"
         request_data["job_id"] = job_id
-        submission_time = datetime.utcnow()
+        submission_time = datetime.now(timezone.utc)
 
+        self._state_lock.acquire()
         try:
             # 1. Schema validation
             job_request = JobRequest(**request_data)
@@ -300,24 +317,23 @@ class OrchestratorService:
             )
             # ── Update cross-call pheromone ────────────────────────────────
             # Evaporate all nodes, then deposit on the chosen node.
-            # This accumulates learned placement preference across calls.
-            _RHO = 0.1
-            _Q   = 1.0
-            eta_score = max(self._node_pheromone.get(selected_node_id, 1.0), 0.01)
+            # Deposit is a fixed Q per successful placement so nodes selected
+            # more often naturally accumulate higher pheromone (standard ACO
+            # elitist deposit without needing the path cost here).
             for nid in self._node_pheromone:
                 self._node_pheromone[nid] = max(
-                    0.01, min(10.0, self._node_pheromone[nid] * (1.0 - _RHO))
+                    0.01, min(10.0, self._node_pheromone[nid] * (1.0 - _PHEROMONE_RHO))
                 )
             self._node_pheromone[selected_node_id] = min(
                 10.0,
-                self._node_pheromone[selected_node_id] + _Q / eta_score,
+                self._node_pheromone[selected_node_id] + _PHEROMONE_Q,
             )
 
             # 4. Resource allocation
             self._allocate_resources(selected_node_id, job_request)
 
             # 5. Job execution record
-            scheduled_time = datetime.utcnow()
+            scheduled_time = datetime.now(timezone.utc)
             job_execution = JobExecution(
                 job_id=job_id,
                 job_request=job_request,
@@ -403,6 +419,8 @@ class OrchestratorService:
                 "node_id": None,
                 "message": f"Unexpected error: {e.__class__.__name__}: {e}",
             }
+        finally:
+            self._state_lock.release()
 
     def drain_pending_queue(self) -> List[Dict[str, Any]]:
         """
@@ -419,6 +437,11 @@ class OrchestratorService:
         Returns:
             List of outcome dicts for monitoring/logging (one per entry processed).
         """
+        with self._state_lock:
+            return self._drain_pending_queue_locked()
+
+    def _drain_pending_queue_locked(self) -> List[Dict[str, Any]]:
+        """Lock-held implementation — called only from drain_pending_queue()."""
         outcomes: List[Dict[str, Any]] = []
         now = time.monotonic()
 
@@ -505,7 +528,7 @@ class OrchestratorService:
 
         job_execution = self.active_jobs[job_id]
         job_execution.state = JobState.COMPLETED if success else JobState.FAILED
-        job_execution.completed_at = datetime.utcnow()
+        job_execution.completed_at = datetime.now(timezone.utc)
         if failure_reason:
             job_execution.failure_reason = failure_reason
 
@@ -572,13 +595,14 @@ class OrchestratorService:
         Args:
             telemetry: NodeTelemetry snapshot from the node agent.
         """
-        node = self.node_state.get(telemetry.node_id)
-        if node is None:
-            logger.warning(
-                "update_node_telemetry: unknown node_id=%s", telemetry.node_id
-            )
-            return
-        node.latest_telemetry = telemetry
+        with self._state_lock:
+            node = self.node_state.get(telemetry.node_id)
+            if node is None:
+                logger.warning(
+                    "update_node_telemetry: unknown node_id=%s", telemetry.node_id
+                )
+                return
+            node.latest_telemetry = telemetry
         logger.debug(
             "Telemetry updated: node=%s cpu=%.1f%% mem=%.1f%%",
             telemetry.node_id, telemetry.cpu_util_pct, telemetry.memory_util_pct,
@@ -623,20 +647,21 @@ class OrchestratorService:
 
             predictor.refit_if_needed(best_profile)
 
-            # Refresh prediction cache
+            # Predict outside the lock (may run LSTM inference, ~1ms)
             node = self.node_state.get(node_id)
             if node:
                 result = predictor.predict(best_profile)
-                # Override node_id since predictor may return profile's default
-                self._prediction_cache[node_id] = PredictionResult(
-                    node_id=node_id,
-                    forecast_horizon_min=result.forecast_horizon_min,
-                    predicted_cpu_util=result.predicted_cpu_util,
-                    predicted_memory_util=result.predicted_memory_util,
-                    predicted_gpu_util=result.predicted_gpu_util,
-                    spike_probability=result.spike_probability,
-                    confidence=result.confidence,
-                )
+                # Lock only for the cache write — keeps training non-blocking
+                with self._state_lock:
+                    self._prediction_cache[node_id] = PredictionResult(
+                        node_id=node_id,
+                        forecast_horizon_min=result.forecast_horizon_min,
+                        predicted_cpu_util=result.predicted_cpu_util,
+                        predicted_memory_util=result.predicted_memory_util,
+                        predicted_gpu_util=result.predicted_gpu_util,
+                        spike_probability=result.spike_probability,
+                        confidence=result.confidence,
+                    )
 
     def get_scheduling_metrics(self) -> dict:
         """

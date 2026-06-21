@@ -154,7 +154,7 @@ async def _simulation_loop() -> None:
                 "preemptible": wt == "batch" and _rnd.random() < 0.3,
             }
             latency_ms = (time.perf_counter() - t0) * 1000.0
-            result = svc.submit_job(request_data, scheduling_latency_ms=latency_ms)
+            result = await asyncio.to_thread(svc.submit_job, request_data, latency_ms)
             if result["status"] == "SCHEDULED":
                 job_id = result["job_id"]
                 node_id = result["node_id"]
@@ -478,10 +478,13 @@ async def upload_trace(file: UploadFile = File(...)):
 
     Returns the number of timesteps loaded, detected format, and a preview.
     """
-    if not file.filename.endswith(".csv"):
+    if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only .csv files are accepted")
 
-    content = await file.read()
+    _MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+    content = await file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds 20 MB limit")
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 

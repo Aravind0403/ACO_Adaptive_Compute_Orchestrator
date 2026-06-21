@@ -89,7 +89,7 @@ Integration
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 import numpy as np
@@ -412,7 +412,7 @@ class WorkloadPredictor:
                 predicted_gpu_util={},
                 spike_probability=0.0,
                 confidence=0.1,
-                generated_at=datetime.utcnow(),
+                generated_at=datetime.now(timezone.utc),
             )
 
         # ── Trained path ──────────────────────────────────────────────────────
@@ -449,7 +449,7 @@ class WorkloadPredictor:
             predicted_gpu_util={},
             spike_probability=spike_probability,
             confidence=confidence,
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(timezone.utc),
         )
 
     def refit_if_needed(self, profile: WorkloadProfile) -> None:

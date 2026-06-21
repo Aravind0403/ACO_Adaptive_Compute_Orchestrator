@@ -34,7 +34,7 @@ Group 5: Normalisation      — z-score parameters stored and independent
 from __future__ import annotations
 
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 import pytest
@@ -63,7 +63,7 @@ def _make_profile(
     All other fields (memory, GPU, duration) use harmless defaults.
     """
     profile = WorkloadProfile(workload_name=workload_name)
-    base_time = datetime.utcnow()
+    base_time = datetime.now(timezone.utc)
     for i, cpu in enumerate(cpu_values):
         sample = ResourceSample(
             timestamp=base_time + timedelta(seconds=i),

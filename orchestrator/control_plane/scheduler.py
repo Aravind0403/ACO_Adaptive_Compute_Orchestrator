@@ -197,7 +197,6 @@ def aco_schedule(
     # Compute CostEngine score for each (job, node) pair.
     # When a strategy is provided, its threshold overrides are forwarded to
     # CostEngine so the scoring reflects the job's actual requirements.
-    import numpy as np
     n_jobs = 1
     n_nodes = len(feasible_nodes)
 
@@ -252,7 +251,6 @@ def aco_schedule(
             )
 
         colony = Colony(jobs=[job_request], nodes=feasible_nodes, initial_tau=initial_tau)
-        colony._eta_override = eta
         plan = _run_colony_with_eta(colony, eta, force_fast_path=use_fast_path)
         node_id = plan[job_request.job_id]
 
@@ -294,7 +292,6 @@ def _run_colony_with_eta(
         force_fast_path: If True, always use deterministic argmax (skip colony).
                          Used by strategy.use_fast_path=True.
     """
-    import numpy as np
     from aco_core.ant import Ant
     from aco_core.pheromone import PheromoneMatrix
     from aco_core.colony import N_ANTS, N_ITERATIONS, STAGNATION_LIMIT
