@@ -67,7 +67,7 @@ QoS, cost efficiency, heterogeneous clusters
 \section{Introduction}
 % =============================================================
 
-Modern data-centre workloads are heterogeneous by nature.
+Data-centre workloads span latency-critical inference, preemptible batch analytics, and bursty stream-processing.
 A single cluster may simultaneously host latency-critical deep
 learning inference jobs that tolerate no queuing delay, batch
 analytics pipelines that can tolerate preemption, and bursty
@@ -337,6 +337,37 @@ configurable load threshold. Weights and thresholds are
 configurable per scheduling strategy and can be overridden
 at call time for workload-specific tuning.
 
+To ground the prediction factor $p_i$ in formal queueing theory,
+we model node $n_i$ as an M/G/1 queue with arrival rate
+$\lambda_i$ and service rate $\mu_i$. The LSTM predictor outputs
+a forecasted utilisation $\hat{u}_i \in [0,1)$ for the next time
+tick, which we equate to the traffic intensity
+$\rho_i = \lambda_i / \mu_i$.
+By the Pollaczek-Khinchine formula, the expected waiting time in
+the queue $W_q$ is strictly monotonically increasing with respect
+to $\rho_i$:
+\begin{equation}
+  W_q(\hat{u}_i) = \frac{\lambda_i \,\overline{S^2}}{2(1 - \hat{u}_i)}
+  \label{eq:pk}
+\end{equation}
+where $\overline{S^2}$ is the second moment of the service time
+distribution. As the LSTM predicts $\hat{u}_i \to 1$, the
+expected queueing delay $W_q \to \infty$.
+To penalize nodes approaching saturation, the Cost Engine applies
+a prediction factor $p_i$. In our implementation we use a
+computationally efficient first-order linear approximation:
+\begin{equation}
+  p_i = 1 - (\hat{u}_i \cdot w \cdot c)
+  \label{eq:pi_linear}
+\end{equation}
+where $w$ is a configurable weight and $c$ is the predictor
+confidence. This linear form preserves the key monotonic
+property derived from Equation~\ref{eq:pk}: as predicted
+utilisation $\hat{u}_i \to 1$, the penalty factor $p_i \to 0$,
+steering the ACO colony away from nodes forecasted to experience
+high queueing delays, while maintaining $\mathcal{O}(1)$
+evaluation time per node.
+
 \subsection{LSTM Load Predictor}
 
 Each cluster node maintains an independent LSTM predictor
@@ -588,54 +619,6 @@ cost axis when the cheapest node is already identified. Heterogeneous per-node t
 before routing differentiation is observable in a pure cost
 benchmark.
 
-\paragraph{Experiment 4: Controlled LSTM Routing Ablation.}
-To isolate the routing mechanism of the LSTM forecaster from cluster-wide cost dynamics, 
-we designed a controlled micro-ablation. Rather than evaluating full-cluster throughput, 
-this experiment tests the fundamental hypothesis: can the LSTM differentiate between nodes 
-when their utilisation histories diverge? Two identically priced ON\_DEMAND nodes are each trained on a distinct
-80-row window from the Alibaba 2018 machine
-trace~\cite{alibaba2018trace}: \emph{node-stable} on a
-quiet segment (CPU $30.3\% \pm 3.2\%$, flat), and
-\emph{node-volatile} on a segment exhibiting a
-$+9.4$\,pp rising trend toward a utilisation surge (CPU
-$36.7\% \pm 7.1\%$). Per-node LSTM training produces
-genuinely different load forecasts: $0.078$ for
-node-stable versus $0.200$ for node-volatile
-($\Delta = +0.122$). We then schedule 30 latency-critical
-jobs under two conditions, shuffling node list order on
-each trial to eliminate tie-breaking bias.
-
-\begin{table}[t]
-\caption{Experiment 4: LSTM routing impact under heterogeneous
-per-node load (30 LC jobs, real Alibaba trace windows).
-Both nodes are identically priced; the only differentiator
-is per-node LSTM load forecast.}
-\label{tab:lstm_routing}
-\begin{center}
-\begin{tabular}{lrr}
-\toprule
-\textbf{Condition} & \textbf{\% jobs to stable node} & \textbf{Routing delta} \\
-\midrule
-ACO-only (no predictions) & 30.0\% & --- \\
-ACO+LSTM (real trace)     & \textbf{100.0\%} & \textbf{$+$70\,pp} \\
-\bottomrule
-\end{tabular}
-\end{center}
-\end{table}
-
-With predictions disabled, routing is arbitrary: both nodes
-appear identical to the cost engine and the scheduler
-distributes jobs by node-list order (30\% to stable in this
-trial). With LSTM predictions active, the prediction factor
-$p_i = 1 - (\texttt{load\_prob} \times w \times
-\texttt{conf})$ is lower for node-volatile, causing the
-ACO's argmax path to select node-stable on every single
-trial. This demonstrates that the LSTM's $r = -0.64$
-calibration signal \emph{does} translate to a concrete
-routing decision when nodes carry independent utilisation
-histories — the condition absent in Experiment 1's shared-trace
-setup.
-
 \subsection{Scheduling Latency}
 \label{subsec:latency}
 
@@ -760,17 +743,72 @@ compliance from 74.4\% (ACO-cost) to \textbf{97.4\%} — a
 ON\_DEMAND GPU instances cost more than SPOT, and any scheduler
 that enforces this constraint must pay that premium.
 
-While Cost-Aware Greedy minimizes raw cost by deterministically selecting the cheapest 
-feasible node, it lacks a mechanism to enforce QoS constraints, resulting in 19.2\% of 
-latency-sensitive jobs being placed on interruptible SPOT instances. ACO+QoS explicitly 
-navigates the cost-QoS Pareto frontier: it accepts a calculated cost premium to guarantee 
-97.4\% ON\_DEMAND compliance for latency-critical workloads, providing a strict reliability 
-guarantee that unconstrained Greedy placement cannot offer.
+While Cost-Aware Greedy minimizes raw cost by deterministically
+selecting the cheapest feasible node, it lacks a mechanism to
+enforce QoS constraints or maintain cluster balance. This myopic
+packing inherently induces utilisation hotspots and fragmentation,
+resulting in 19.2\% of latency-sensitive jobs being placed on
+interruptible SPOT instances when cheaper SPOT nodes are available.
+ACO-Adaptive explicitly navigates the cost-QoS Pareto frontier:
+the headroom-aware heuristic ($s_i$ in Equation~\ref{eq:cost})
+and continuous pheromone evaporation jointly penalize over-utilized
+nodes, naturally distributing load across the heterogeneous pool.
+This structural advantage allows ACO+QoS to accept a calculated
+cost premium to guarantee 97.4\% ON\_DEMAND compliance for
+latency-critical workloads (compared to Greedy's 80.8\%),
+providing a strict reliability guarantee that unconstrained,
+hotspot-prone Greedy placement cannot offer.
 
 The large Random baseline (\$564.30/hr) reflects random
 selection landing on multi-GPU V100M32 nodes (\$25.60/hr)
 for single-GPU jobs — a fragmentation pathology the CostEngine
 naturally avoids by scoring against overprovisioned nodes.
+
+\subsection{Experiment 4: Controlled LSTM Routing Ablation}
+\label{subsec:exp4}
+
+To isolate the routing mechanism of the LSTM forecaster from
+cluster-wide cost dynamics, we designed a controlled micro-ablation.
+This experiment tests the fundamental hypothesis: can the LSTM
+differentiate between nodes when their utilisation histories diverge?
+Two identically priced ON\_DEMAND nodes are each trained on a distinct
+80-row window from the Alibaba 2018 machine
+trace~\cite{alibaba2018trace}: \emph{node-stable} on a quiet segment
+(CPU $30.3\% \pm 3.2\%$, flat), and \emph{node-volatile} on a segment
+exhibiting a $+9.4$\,pp rising trend toward a utilisation surge
+(CPU $36.7\% \pm 7.1\%$). Per-node LSTM training produces genuinely
+different load forecasts: $0.078$ for node-stable versus $0.200$ for
+node-volatile ($\Delta = +0.122$). We schedule 30 latency-critical
+jobs under two conditions, shuffling node-list order on each trial
+to eliminate tie-breaking bias.
+
+\begin{table}[t]
+\caption{Experiment 4: LSTM routing impact under heterogeneous
+per-node load (30 LC jobs, real Alibaba trace windows).
+Both nodes are identically priced; the only differentiator
+is per-node LSTM load forecast.}
+\label{tab:lstm_routing}
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Condition} & \textbf{\% to stable node} & \textbf{Routing delta} \\
+\midrule
+ACO-only (no predictions) & 30.0\% & --- \\
+ACO+LSTM (real trace)     & \textbf{100.0\%} & \textbf{$+$70\,pp} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+With predictions disabled, routing is arbitrary: both nodes appear
+identical to the cost engine and the scheduler distributes jobs by
+node-list order (30\% to stable in this trial). With LSTM predictions
+active, the penalty factor $p_i$ (Equation~\ref{eq:pi_linear}) is
+lower for node-volatile, causing the ACO argmax path to select
+node-stable on every trial. This demonstrates that the LSTM's
+$r = -0.64$ calibration signal translates to a concrete routing
+decision when nodes carry independent utilisation histories — the
+condition absent in Experiment 1's shared-trace setup.
 
 \subsection{Pheromone Learning and Queue Throughput}
 
