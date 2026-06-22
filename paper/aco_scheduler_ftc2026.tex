@@ -1,36 +1,38 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% ACO-Adaptive Compute Scheduler
-%% FTC 2026 — Future Technologies Conference
-%% Late Breaking Round — Springer LNNS
+%% HiPC 2026 — IEEE International Conference on High Performance
+%% Computing, Data, and Analytics
+%% Track: AI Systems and Applications
 %% Deadline: July 1, 2026
 %%
-%% DOUBLE-BLIND SUBMISSION: author/institute fields commented out
+%% DOUBLE-BLIND SUBMISSION: author/affiliation withheld
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\documentclass{svproc}
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
 
-\usepackage{url}
-\def\UrlFont{\rmfamily}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
-\usepackage{float}
+\usepackage{textcomp}
+\usepackage{xcolor}
 \usepackage{booktabs}
-\usepackage{amsmath}
+\usepackage{float}
+\usepackage{url}
 \usepackage{tikz}
 \usetikzlibrary{positioning}
+\renewcommand{\ttdefault}{cmtt}
 
 \begin{document}
-\[\mainmatter
 
 \title{ACO-Adaptive: Ant Colony Optimization with LSTM-Guided\\
        Predictive Resource Placement in Heterogeneous GPU Clusters}
 
-\titlerunning{ACO-Adaptive Compute Scheduler}
-
-% DOUBLE-BLIND: commented out for submission
-%\author{Aravind Sundaresan\inst{1}}
-%\authorrunning{A. Sundaresan}
-%\institute{Institution Name, City, Country\\
-%\email{aravindsharma20@gmail.com}}
+% DOUBLE-BLIND: author block anonymised for submission
+\author{
+  \IEEEauthorblockN{Anonymous Author(s)}
+  \IEEEauthorblockA{Affiliation withheld for double-blind review}
+}
 
 \maketitle
 
@@ -53,9 +55,12 @@ correlation of $-0.64$ between predicted utilisation and observed idle capacity.
 heterogeneous per-node load histories, LSTM-guided routing improves safe-node selection for 
 latency-critical jobs by 70 percentage points over unguided placement.
 
-\keywords{cluster scheduling, ant colony optimization, LSTM,
-GPU scheduling, QoS, cost efficiency, heterogeneous clusters}
 \end{abstract}
+
+\begin{IEEEkeywords}
+cluster scheduling, ant colony optimization, LSTM, GPU scheduling,
+QoS, cost efficiency, heterogeneous clusters
+\end{IEEEkeywords}
 
 
 % =============================================================
@@ -223,49 +228,54 @@ with a FastAPI REST interface. Figure~\ref{fig:arch} shows the
 top-level architecture. Five components form the control plane;
 a NodeAgent layer constitutes the data plane.
 
-\begin{figure}[H]
+\begin{figure*}[t]
 \centering
-\begin{tikzpicture}[
-    node distance=1.8cm and 2.2cm,
-    box/.style={rectangle, draw, rounded corners, minimum width=2.8cm,
-                minimum height=1cm, align=center, fill=blue!10,
-                font=\small\bfseries},
-    data/.style={rectangle, draw, rounded corners, minimum width=2.4cm,
-                 minimum height=0.9cm, align=center, fill=orange!10,
-                 font=\small},
-    arr/.style={thick,->,>=stealth},
-    darr/.style={thick,dashed,->,>=stealth}
-]
-% Control Plane
-\node[box] (api)    {API Gateway};
-\node[box, right=of api]    (router) {Intent Router};
-\node[box, right=of router] (cost)   {Cost Engine};
-\node[box, right=of cost]   (aco)    {ACO Scheduler};
+\begin{tikzpicture}[>=stealth, thick]
+  % Styles
+  \tikzstyle{cbox}=[rectangle, draw=blue!60, fill=blue!8, rounded corners=4pt,
+                    minimum width=3.0cm, minimum height=0.85cm,
+                    align=center, font=\small\bfseries]
+  \tikzstyle{sbox}=[rectangle, draw=orange!70, fill=orange!7, rounded corners=4pt,
+                    minimum width=2.8cm, minimum height=0.85cm,
+                    align=center, font=\small]
+  \tikzstyle{arr}=[->, thick, >=stealth]
+  \tikzstyle{darr}=[->, thick, dashed, >=stealth, gray!80]
 
-% Data Plane and State
-\node[data, below=1.5cm of aco]    (agents) {Node Agents\\(Data Plane)};
-\node[data, below=1.5cm of router] (lstm)   {LSTM Predictor};
-\node[data, left=1.5cm of lstm]    (phero)  {Pheromone\\Matrix};
+  % --- Control Plane (top row, evenly spaced) ---
+  \node[cbox] at ( 0.0, 0) (api)    {API Gateway};
+  \node[cbox] at ( 5.0, 0) (router) {Intent Router};
+  \node[cbox] at (10.0, 0) (cost)   {Cost Engine};
+  \node[cbox] at (15.0, 0) (aco)    {ACO Scheduler};
 
-% Control plane edges
-\draw[arr] (api)    -- node[above, font=\small] {Job Request}     (router);
-\draw[arr] (router) -- node[above, font=\small] {Intent}          (cost);
-\draw[arr] (cost)   -- node[above, font=\small] {Composite Score} (aco);
-\draw[arr] (aco)    -- node[right, font=\small] {Placement}       (agents);
+  % --- State / Predictor Layer (below Router and Cost) ---
+  \node[sbox] at ( 5.0,-2.5) (lstm)  {LSTM\\Predictor};
+  \node[sbox] at (10.0,-2.5) (phero) {Pheromone\\Matrix $\tau$};
 
-% Feedback loops
-\draw[darr] (agents) -- node[left,  font=\small] {Telemetry}           (lstm);
-\draw[darr] (agents) to[bend right=30] node[below, font=\small]
-            {Execution Feedback} (phero);
-\draw[arr]  (lstm)  -- node[right, font=\small] {Load Forecast}        (router);
-\draw[arr]  (phero) to[bend left=20]  node[above, font=\small]
-            {Pheromone $\tau$} (aco);
+  % --- Data Plane (below ACO) ---
+  \node[sbox] at (15.0,-2.5) (agents){Node Agents\\($\times$5)};
+
+  % --- Control plane pipeline ---
+  \draw[arr] (api)    -- node[above, font=\scriptsize]{Job Request}       (router);
+  \draw[arr] (router) -- node[above, font=\scriptsize]{Strategy + Filter} (cost);
+  \draw[arr] (cost)   -- node[above, font=\scriptsize]{Score $\eta$}      (aco);
+  \draw[arr] (aco)    -- node[right, font=\scriptsize]{Placement}         (agents);
+
+  % --- Feedback loops (dashed, async) ---
+  \draw[darr] (agents) to[bend right=30]
+              node[below, font=\scriptsize, pos=0.5]{Telemetry} (lstm);
+  \draw[darr] (agents) --
+              node[below, font=\scriptsize]{Exec.\ Feedback} (phero);
+
+  % --- Predictive signals (solid, sync) ---
+  \draw[arr] (lstm)  -- node[left,  font=\scriptsize]{Load Forecast} (router);
+  \draw[arr] (phero) -- node[right, font=\scriptsize]{$\tau$}        (cost);
 \end{tikzpicture}
-\caption{ACO-Adaptive architecture. The Control Plane interacts with the Data Plane via 
-predictive (LSTM) and historical (Pheromone) feedback loops. Dashed arrows denote 
-asynchronous telemetry; solid arrows denote synchronous decisions.}
+\caption{ACO-Adaptive system architecture. Solid arrows: synchronous scheduling path
+(left to right across the Control Plane, then down to the Data Plane).
+Dashed arrows: asynchronous feedback — Node Agents stream telemetry to the LSTM Predictor
+and report execution outcomes to the Pheromone Matrix.}
 \label{fig:arch}
-\end{figure}
+\end{figure*}
 
 \subsection{ACO Colony Engine}
 
@@ -472,9 +482,9 @@ Figure~\ref{fig:exp1} shows the per-job placement cost for 30
 jobs drawn from the Azure VM distribution under the balanced
 CPU topology.
 
-\begin{figure}[H]
+\begin{figure}[t]
 \centering
-\includegraphics[width=0.92\textwidth]{figures/tier1_aco_vs_naive.png}
+\includegraphics[width=\columnwidth]{figures/tier1_aco_vs_naive.png}
 \caption{Experiment 1: Cost per job. Top: total cost by algorithm. Bottom: per-job scatter sorted by CPU cores.}
 \label{fig:exp1}
 \end{figure}
@@ -494,11 +504,12 @@ topology as the primary claim; the adversarial topology
 illustrates the upper bound when node cost heterogeneity is
 extreme.
 
-\begin{table}[H]
+\begin{table}[t]
 \caption{Cost efficiency: ACO-Adaptive vs baselines (30 jobs,
 Azure VM size distribution)}
 \label{tab:cost}
 \begin{center}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{llrrr}
 \toprule
 \textbf{Topology} & \textbf{Algorithm} & \textbf{Total (\$/hr)}
@@ -512,7 +523,7 @@ Adversarial & Random     & 45.28 & 1.509 & $-$49.7\% \\
 Adversarial & First-Fit  & 90.00 & 3.000 & --- \\
 Adversarial & ACO (ours) & \textbf{3.60}  & \textbf{0.120} & \textbf{$-$96.0\%} \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{center}
 \end{table}
 
@@ -531,7 +542,7 @@ LSTM predictor to cost routing. We train one per-node LSTM on
 \texttt{PredictionResult} to the ACO colony's CostEngine via
 the $p_i$ prediction factor in Equation~\ref{eq:cost}.
 
-\begin{table}[H]
+\begin{table}[t]
 \caption{LSTM ablation: ACO-only vs ACO+LSTM (balanced topology,
 30 jobs). Per-node LSTM confidence $\approx 0.628$ for all nodes.}
 \label{tab:lstm_ablation}
@@ -594,7 +605,7 @@ node-stable versus $0.200$ for node-volatile
 jobs under two conditions, shuffling node list order on
 each trial to eliminate tie-breaking bias.
 
-\begin{table}[H]
+\begin{table}[t]
 \caption{Experiment 4: LSTM routing impact under heterogeneous
 per-node load (30 LC jobs, real Alibaba trace windows).
 Both nodes are identically priced; the only differentiator
@@ -631,9 +642,9 @@ setup.
 Figure~\ref{fig:latency} shows P99 scheduling latency across
 burst sizes from 1 to 200 concurrent jobs.
 
-\begin{figure}[H]
+\begin{figure}[t]
 \centering
-\includegraphics[width=0.92\textwidth]{figures/tier1_p99_latency.png}
+\includegraphics[width=\columnwidth]{figures/tier1_p99_latency.png}
 \caption{Scheduling latency vs.\ concurrent job burst size. The dashed line marks the 10\,ms SLA target.}
 \label{fig:latency}
 \end{figure}
@@ -647,7 +658,7 @@ of jobs, amortising the colony overhead. This confirms
 ACO-Adaptive's suitability for latency-critical inference
 workloads.
 
-\begin{table}[H]
+\begin{table}[t]
 \caption{P99 and mean scheduling latency by burst size}
 \label{tab:latency}
 \begin{center}
@@ -674,9 +685,9 @@ days. Figure~\ref{fig:lstm} shows the relationship between
 predicted CPU utilisation (normalised, per-node) and observed
 idle capacity.
 
-\begin{figure}[H]
+\begin{figure}[t]
 \centering
-\includegraphics[width=0.92\textwidth]{figures/tier2_confidence_calibration.png}
+\includegraphics[width=\columnwidth]{figures/tier2_confidence_calibration.png}
 \caption{Experiment 2: LSTM confidence calibration on the Alibaba 2018 trace. Higher predicted utilisation correlates with lower observed idle capacity ($r = -0.64$).}
 \label{fig:lstm}
 \end{figure}
@@ -695,18 +706,19 @@ quality improves proportionally as per-node history accumulates.
 Figure~\ref{fig:gpu} presents the GPU scheduling results on
 the Alibaba ATC'23 trace.
 
-\begin{figure}[H]
+\begin{figure}[t]
 \centering
-\includegraphics[width=0.92\textwidth]{figures/tier4_gpu_scheduling.png}
+\includegraphics[width=\columnwidth]{figures/tier4_gpu_scheduling.png}
 \caption{Experiment 3: GPU scheduling on the Alibaba production cluster. Left: total placement cost. Right: LS job placement on ON\_DEMAND nodes.}
 \label{fig:gpu}
 \end{figure}
 
-\begin{table}[H]
+\begin{table}[t]
 \caption{GPU scheduling results: 5-way comparison
 (100 jobs, Alibaba GPU trace, 32 nodes / 7 GPU types)}
 \label{tab:gpu}
 \begin{center}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lrrrr}
 \toprule
 \textbf{Algorithm} & \textbf{Total (\$/hr)}
@@ -720,7 +732,7 @@ ACO-cost (ours) & 115.00 & 1.15 & 74.4\% & $-$79.6\% \\
 ACO+QoS (ours)  & \textbf{157.40} & \textbf{1.57}
                  & \textbf{97.4\%} & $-$72.1\% \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{center}
 \end{table}
 
@@ -873,7 +885,7 @@ topologies with real job-arrival traces.
 
 
 % =============================================================
-\section*{Acknowledgements}
+\section*{Acknowledgment}
 % =============================================================
 
 % DOUBLE-BLIND: funding and institutional acknowledgements
@@ -1013,5 +1025,5 @@ Anthropic: Claude (claude-sonnet-4-6). AI assistant used for
 language assistance in manuscript preparation.
 \url{https://www.anthropic.com/claude} (2026)
 
-\end{thebibliography}\]
+\end{thebibliography}
 \end{document}
