@@ -19,7 +19,7 @@
 \usetikzlibrary{positioning}
 
 \begin{document}
-\mainmatter
+\[\mainmatter
 
 \title{ACO-Adaptive: Ant Colony Optimization with LSTM-Guided\\
        Predictive Resource Placement in Heterogeneous GPU Clusters}
@@ -36,31 +36,22 @@
 
 % =============================================================
 \begin{abstract}
-Efficient scheduling in heterogeneous clusters is challenging
-as workloads span batch jobs and latency-sensitive inference.
-Production schedulers like Borg and Kubernetes provide
-placement guarantees but lack predictive load signals, while
-reinforcement learning approaches require costly offline
-training. We present ACO-Adaptive, a hybrid scheduler
-combining Ant Colony Optimization (ACO) with an online Long
-Short-Term Memory (LSTM) predictor for cost-aware,
-QoS-preserving placement. The ACO colony maintains per-node
-pheromone trails encoding learned preferences, while the LSTM
-supplies load forecasts that bias heuristic scoring toward
-nodes unlikely to experience utilisation spikes. We evaluate
-ACO-Adaptive against First-Fit and random baselines on two
-real-world traces: AzureTracesForPacking2020 (114 million VM
-requests) and the Alibaba GPU cluster trace (1{,}213 nodes,
-seven GPU types). On CPU workloads, ACO-Adaptive achieves a
-28.6\% cost reduction over First-Fit. On GPU workloads, it
-reduces placement cost by 79.6\% versus random scheduling.
-Scheduling latency remains below 0.75\,ms P99 at 200
-concurrent jobs. The LSTM predictor demonstrates a Pearson
-correlation of $-0.64$ between predicted utilisation and
-observed idle capacity. Under heterogeneous per-node load
-histories, LSTM-guided routing improves safe-node selection
-for latency-critical jobs by 70 percentage points over
-unguided placement.
+Efficient scheduling in heterogeneous clusters is challenging as workloads span batch jobs 
+and latency-sensitive inference. Production schedulers like Borg and Kubernetes provide 
+placement guarantees but lack predictive load signals, while reinforcement learning approaches 
+require costly offline training. We present ACO-Adaptive, a hybrid scheduler combining Ant 
+Colony Optimization (ACO) with an online Long Short-Term Memory (LSTM) predictor for 
+cost-aware, QoS-preserving placement. The ACO colony maintains per-node pheromone trails 
+encoding learned preferences, while the LSTM supplies load forecasts that bias heuristic 
+scoring toward nodes unlikely to experience high load. We evaluate ACO-Adaptive 
+against First-Fit and random baselines on two real-world traces: AzureTracesForPacking2020 
+(114 million VM requests) and the Alibaba GPU cluster trace (1,213 nodes, seven GPU types). 
+On CPU workloads, ACO-Adaptive achieves a 28.6\% cost reduction over First-Fit. On GPU 
+workloads, it reduces placement cost by 79.6\% versus random scheduling. Scheduling latency 
+remains below 0.75\,ms P99 at 200 concurrent jobs. The LSTM predictor demonstrates a Pearson 
+correlation of $-0.64$ between predicted utilisation and observed idle capacity. Under 
+heterogeneous per-node load histories, LSTM-guided routing improves safe-node selection for 
+latency-critical jobs by 70 percentage points over unguided placement.
 
 \keywords{cluster scheduling, ant colony optimization, LSTM,
 GPU scheduling, QoS, cost efficiency, heterogeneous clusters}
@@ -82,7 +73,7 @@ existing systems: \emph{cost awareness} (prefer cheaper nodes
 when quality constraints are met), \emph{QoS discrimination}
 (separate latency-sensitive jobs from batch jobs during
 placement), and \emph{predictive load anticipation} (avoid
-nodes whose utilisation will spike before a job completes).
+nodes whose utilisation will surge before a job completes).
 
 Production schedulers such as Borg~\cite{verma2015borg},
 Omega~\cite{schwarzkopf2013omega}, Mesos~\cite{hindman2011mesos},
@@ -118,7 +109,7 @@ contributions:
 \item An online per-node LSTM predictor that provides a
       CPU utilisation forecast signal integrated into the
       colony's composite scoring heuristic, penalising nodes
-      predicted to be under load.
+      predicted to be under high load.
 \item A workload intent router that classifies incoming jobs
       by QoS tier (latency-critical, batch, stream-processing)
       and applies tier-specific scheduling strategies including
@@ -270,10 +261,9 @@ a NodeAgent layer constitutes the data plane.
 \draw[arr]  (phero) to[bend left=20]  node[above, font=\small]
             {Pheromone $\tau$} (aco);
 \end{tikzpicture}
-\caption{ACO-Adaptive architecture. The Control Plane interacts
-with the Data Plane via predictive (LSTM) and historical
-(Pheromone) feedback loops. Dashed arrows denote asynchronous
-telemetry; solid arrows denote synchronous decisions.}
+\caption{ACO-Adaptive architecture. The Control Plane interacts with the Data Plane via 
+predictive (LSTM) and historical (Pheromone) feedback loops. Dashed arrows denote 
+asynchronous telemetry; solid arrows denote synchronous decisions.}
 \label{fig:arch}
 \end{figure}
 
@@ -303,15 +293,12 @@ $\Delta\tau_i = 1 / \text{cost}_{n_i}$, and evaporation
 applies globally: $\tau_i \leftarrow (1-\rho)\tau_i$
 with $\rho=0.1$.
 
-We adopt the standard Ant Colony System (ACS) transition rule
-rather than asymptotically optimal formulations to guarantee
-$O(A \cdot I \cdot N)$ scheduling latency. In applied
-deployments, runtime predictability and sub-millisecond
-overhead are prioritised over theoretical convergence bounds.
-In practice, $A=10$ ants and $I=3$ iterations ensure the
-scheduler completes placement decisions in sub-millisecond
-time (Section~\ref{subsec:latency}), making the heuristic
-highly suitable for latency-sensitive cluster environments.
+We adopt the standard Ant Colony System (ACS) transition rule rather than asymptotically 
+optimal formulations to guarantee $O(A \cdot I \cdot N)$ scheduling latency. In applied 
+deployments, runtime predictability and sub-millisecond overhead are prioritized over 
+theoretical convergence bounds. In practice, $A=10$ and $I=3$ ensure the scheduler completes 
+placement decisions in sub-millisecond time (Section~\ref{subsec:latency}), making the 
+heuristic highly suitable for latency-sensitive cluster environments.
 
 Pheromone state persists across scheduling calls through the
 OrchestratorService, which maintains a shared
@@ -336,7 +323,7 @@ interruption probability; $c_i$ is an inverse cost score
 factor rewarding nodes with spare capacity above the workload's
 requested resources; and $p_i$ is a prediction factor that
 penalises nodes whose LSTM-predicted CPU utilisation exceeds a
-configurable spike threshold. Weights and thresholds are
+configurable load threshold. Weights and thresholds are
 configurable per scheduling strategy and can be overridden
 at call time for workload-specific tuning.
 
@@ -417,8 +404,7 @@ The computational complexity of our ACO implementation is
 $O(A \cdot I \cdot N)$, where $A$ is ants, $I$ is iterations,
 and $N$ is nodes, ensuring it scales linearly with cluster
 size. Scaling the pheromone matrix to 1{,}000$+$ nodes via
-distributed state management is the primary focus of
-future work.
+distributed state management is the primary focus of future work.
 
 We evaluate on two distinct topologies. The \emph{balanced CPU
 topology} consists of three node classes: a mid-tier ON\_DEMAND
@@ -441,7 +427,7 @@ cores (45\%) and 8 cores (24\%). Memory is set proportionally
 at 2\,GB per core.
 
 \textbf{Alibaba 2018 Machine Trace.} Utilisation data for the
-LSTM calibration experiment (T2.2) is sourced from the Alibaba
+LSTM calibration experiment is sourced from the Alibaba
 cluster-trace-v2018~\cite{alibaba2018trace}, a public trace of
 cluster-wide CPU and memory utilisation at 5-minute granularity
 over eight days, comprising 2{,}243 records.\footnote{The
@@ -481,16 +467,15 @@ for reproducibility.
 
 \subsection{Experiment 1: CPU Cost Efficiency}
 
-Figure~\ref{fig:t11} shows the per-job placement cost for 30
+Figure~\ref{fig:exp1} shows the per-job placement cost for 30
 jobs drawn from the Azure VM distribution under the balanced
 CPU topology.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{../benchmarks/results/tier1_aco_vs_naive.png}
-\caption{T1.1 — Cost per job: ACO vs First-Fit vs Random + LSTM ablation.
-Top: total cost by algorithm. Bottom: per-job scatter sorted by CPU cores.}
-\label{fig:t11}
+\includegraphics[width=0.92\textwidth]{figures/tier1_aco_vs_naive.png}
+\caption{Experiment 1: Cost per job. Top: total cost by algorithm. Bottom: per-job scatter sorted by CPU cores.}
+\label{fig:exp1}
 \end{figure}
 
 Table~\ref{tab:cost} summarises the results for both topologies.
@@ -567,12 +552,12 @@ ACO+LSTM     & \textbf{15.00} & $-$28.6\% \\
 
 Table~\ref{tab:lstm_ablation} demonstrates that the LSTM
 predictor contributes 0.00\% to direct cost minimisation in
-the T1.1 ablation. This is by design: the LSTM's role in
+the Experiment 1 ablation. This is by design: the LSTM's role in
 ACO-Adaptive is not cost-optimisation, but latency-safety
-routing. By predicting utilisation spikes, it steers
+routing. By predicting utilisation surges, it steers
 latency-sensitive jobs away from nodes predicted to congest,
 intentionally trading marginal cost efficiency for strict P99
-SLA adherence. This is validated empirically in T5.1, where
+SLA adherence. This is validated empirically in Experiment 4, where
 LSTM-driven routing increases safe-node selection for
 latency-critical jobs from 30\% to 100\% under heterogeneous
 node load.
@@ -586,40 +571,33 @@ structural property of the benchmark itself: ACO-only already
 routes every job to the cheapest node (\$0.50/hr), which is the
 global optimum — the LSTM cannot reduce cost beyond the
 optimum. The LSTM's value appears on the QoS axis (avoiding
-nodes predicted to spike for latency-critical jobs), not on the
-cost axis when the cheapest node is already identified. The
-former spike probability scaling bug (a $\times 10$ unit error,
-now fixed) has been corrected; after correction the predictor
-shows a 1.56$\times$ lift at spike onsets vs baseline (see
-Section~\ref{sec:limitations}), confirming the mechanism is
-sound but that heterogeneous per-node training data is needed
-before routing differentiation is observable in a cost
+nodes predicted to experience high load for latency-critical jobs), not on the
+cost axis when the cheapest node is already identified. Heterogeneous per-node training data is required
+before routing differentiation is observable in a pure cost
 benchmark.
 
-\paragraph{Experiment 5: Controlled LSTM Routing Ablation.}
-To isolate the routing mechanism of the LSTM forecaster from
-cluster-wide cost dynamics, we designed a controlled
-micro-ablation. Rather than evaluating full-cluster
-throughput, this experiment tests the fundamental hypothesis:
-can the LSTM differentiate between nodes when their
-utilisation histories diverge? Two identically priced
-ON\_DEMAND nodes are each trained on a distinct 80-row window
-from the Alibaba 2018 machine trace~\cite{alibaba2018trace}: \emph{node-stable} on a
+\paragraph{Experiment 4: Controlled LSTM Routing Ablation.}
+To isolate the routing mechanism of the LSTM forecaster from cluster-wide cost dynamics, 
+we designed a controlled micro-ablation. Rather than evaluating full-cluster throughput, 
+this experiment tests the fundamental hypothesis: can the LSTM differentiate between nodes 
+when their utilisation histories diverge? Two identically priced ON\_DEMAND nodes are each trained on a distinct
+80-row window from the Alibaba 2018 machine
+trace~\cite{alibaba2018trace}: \emph{node-stable} on a
 quiet segment (CPU $30.3\% \pm 3.2\%$, flat), and
 \emph{node-volatile} on a segment exhibiting a
-$+9.4$\,pp rising trend toward a utilisation spike (CPU
+$+9.4$\,pp rising trend toward a utilisation surge (CPU
 $36.7\% \pm 7.1\%$). Per-node LSTM training produces
-genuinely different spike probabilities: $0.078$ for
+genuinely different load forecasts: $0.078$ for
 node-stable versus $0.200$ for node-volatile
 ($\Delta = +0.122$). We then schedule 30 latency-critical
 jobs under two conditions, shuffling node list order on
 each trial to eliminate tie-breaking bias.
 
 \begin{table}[H]
-\caption{T5.1 — LSTM routing impact under heterogeneous
+\caption{Experiment 4: LSTM routing impact under heterogeneous
 per-node load (30 LC jobs, real Alibaba trace windows).
 Both nodes are identically priced; the only differentiator
-is per-node LSTM spike probability.}
+is per-node LSTM load forecast.}
 \label{tab:lstm_routing}
 \begin{center}
 \begin{tabular}{lrr}
@@ -637,25 +615,25 @@ With predictions disabled, routing is arbitrary: both nodes
 appear identical to the cost engine and the scheduler
 distributes jobs by node-list order (30\% to stable in this
 trial). With LSTM predictions active, the prediction factor
-$p_i = 1 - (\texttt{spike\_prob} \times w \times
+$p_i = 1 - (\texttt{load\_prob} \times w \times
 \texttt{conf})$ is lower for node-volatile, causing the
 ACO's argmax path to select node-stable on every single
 trial. This demonstrates that the LSTM's $r = -0.64$
 calibration signal \emph{does} translate to a concrete
 routing decision when nodes carry independent utilisation
-histories — the condition absent in T1.1's shared-trace
+histories — the condition absent in Experiment 1's shared-trace
 setup.
 
-\subsection{Experiment 2: Scheduling Latency}
+\subsection{Scheduling Latency}
+\label{subsec:latency}
 
 Figure~\ref{fig:latency} shows P99 scheduling latency across
 burst sizes from 1 to 200 concurrent jobs.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{../benchmarks/results/tier1_p99_latency.png}
-\caption{T1.3 — P99 scheduling latency vs concurrent job burst
-size. The dashed line marks the 10\,ms SLA target.}
+\includegraphics[width=0.92\textwidth]{figures/tier1_p99_latency.png}
+\caption{Scheduling latency vs.\ concurrent job burst size. The dashed line marks the 10\,ms SLA target.}
 \label{fig:latency}
 \end{figure}
 
@@ -686,7 +664,7 @@ workloads.
 \end{center}
 \end{table}
 
-\subsection{Experiment 3: LSTM Load Forecast Calibration}
+\subsection{Experiment 2: LSTM Load Forecast Calibration}
 \label{subsec:lstm_quality}
 
 We evaluate the LSTM predictor's load signal on the Alibaba
@@ -697,11 +675,8 @@ idle capacity.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{../benchmarks/results/tier2_confidence_calibration.png}
-\caption{Experiment 3 — LSTM load forecast calibration on
-Alibaba 2018 production trace. Higher predicted utilisation
-correlates with lower observed idle capacity (Pearson
-$r = -0.64$).}
+\includegraphics[width=0.92\textwidth]{figures/tier2_confidence_calibration.png}
+\caption{Experiment 2: LSTM confidence calibration on the Alibaba 2018 trace. Higher predicted utilisation correlates with lower observed idle capacity ($r = -0.64$).}
 \label{fig:lstm}
 \end{figure}
 
@@ -714,17 +689,15 @@ as a placement penalty and not merely noise. The predictor
 operates on an 8-day sliding trace window per node; its
 quality improves proportionally as per-node history accumulates.
 
-\subsection{Experiment 4: GPU-Aware Scheduling on Production Workloads}
+\subsection{Experiment 3: GPU-Aware Scheduling}
 
 Figure~\ref{fig:gpu} presents the GPU scheduling results on
 the Alibaba ATC'23 trace.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{../benchmarks/results/tier4_gpu_scheduling.png}
-\caption{T4.1 — GPU scheduling on the Alibaba production
-cluster (ATC'23). Left: total placement cost (100 GPU jobs).
-Right: LS job placement on ON\_DEMAND nodes (\%).}
+\includegraphics[width=0.92\textwidth]{figures/tier4_gpu_scheduling.png}
+\caption{Experiment 3: GPU scheduling on the Alibaba production cluster. Left: total placement cost. Right: LS job placement on ON\_DEMAND nodes.}
 \label{fig:gpu}
 \end{figure}
 
@@ -750,16 +723,6 @@ ACO+QoS (ours)  & \textbf{157.40} & \textbf{1.57}
 \end{center}
 \end{table}
 
-While Cost-Aware Greedy minimises raw cost by deterministically
-selecting the cheapest feasible node, it lacks a mechanism to
-enforce QoS constraints, resulting in 19.2\% of
-latency-sensitive jobs being placed on interruptible SPOT
-instances. ACO+QoS explicitly navigates the cost--QoS Pareto
-frontier: it accepts a calculated cost premium to guarantee
-97.4\% ON\_DEMAND compliance for latency-critical workloads,
-providing a strict reliability guarantee that unconstrained
-Greedy placement cannot offer.
-
 Table~\ref{tab:gpu} reveals a concrete cost--QoS tradeoff across
 five algorithms. \textbf{ACO-cost} (no QoS strategy) achieves
 \textbf{79.6\%} cost reduction versus random and \textbf{4.0\%}
@@ -783,6 +746,13 @@ compliance from 74.4\% (ACO-cost) to \textbf{97.4\%} — a
 (\$157.40 vs \$89.00/hr), a fundamentally expected tradeoff:
 ON\_DEMAND GPU instances cost more than SPOT, and any scheduler
 that enforces this constraint must pay that premium.
+
+While Cost-Aware Greedy minimizes raw cost by deterministically selecting the cheapest 
+feasible node, it lacks a mechanism to enforce QoS constraints, resulting in 19.2\% of 
+latency-sensitive jobs being placed on interruptible SPOT instances. ACO+QoS explicitly 
+navigates the cost-QoS Pareto frontier: it accepts a calculated cost premium to guarantee 
+97.4\% ON\_DEMAND compliance for latency-critical workloads, providing a strict reliability 
+guarantee that unconstrained Greedy placement cannot offer.
 
 The large Random baseline (\$564.30/hr) reflects random
 selection landing on multi-GPU V100M32 nodes (\$25.60/hr)
@@ -809,25 +779,22 @@ cycles.
 \label{sec:limitations}
 % =============================================================
 
-\textbf{LSTM cold-start and history requirements.}
-The LSTM predictor requires substantial per-node history to
-produce highly differentiated load forecasts. In homogeneous
-or cold-start regimes (e.g., immediately following a process
-restart), per-node predictions converge to similar values,
-limiting the router's ability to differentiate nodes.
-Persisting model weights across restarts and evaluating
-pre-training strategies to mitigate this cold-start phase
-are deferred to future work.
+\textbf{LSTM cold-start and history requirements.} 
+The LSTM predictor requires substantial per-node history to produce highly differentiated 
+load forecasts. In homogeneous or cold-start regimes (e.g., immediately following a process 
+restart), per-node predictions converge to similar values, limiting the router's ability to 
+differentiate nodes. Persisting model weights across restarts and evaluating pre-training 
+strategies to mitigate this cold-start phase are deferred to future work.
 
-\textbf{LSTM routing impact on cost benchmarks.} The T1.1
+\textbf{LSTM routing impact on cost benchmarks.} The Experiment 1
 ablation (Table~\ref{tab:lstm_ablation}) shows
 $\Delta = 0.00\%$ routing impact on \emph{cost}. This is
 a benchmark-scope limitation, not a system limitation.
-T1.1 uses a single shared trace window for all nodes, producing
-near-identical per-node spike probabilities; and the benchmark
+Experiment 1 uses a single shared trace window for all nodes, producing
+near-identical per-node load forecasts; and the benchmark
 measures cost on an unconstrained cluster where ACO already
 finds the global minimum — prediction cannot reduce cost below
-the floor. T5.1 (Table~\ref{tab:lstm_routing}) demonstrates
+the floor. Experiment 4 (Table~\ref{tab:lstm_routing}) demonstrates
 that when these conditions are lifted (independent per-node
 trace windows, latency-critical QoS metric), LSTM-guided
 routing improves safe-node selection by $+70$\,pp.
@@ -881,14 +848,14 @@ over First-Fit, at an expected cost premium over unconstrained
 placement. Scheduling latency remains below \textbf{0.75\,ms}
 P99 at 200 concurrent jobs.
 
-An LSTM ablation on the T1.1 cost benchmark yields
+An LSTM ablation on the cost benchmark yields
 $\Delta=0.00\%$, expected because ACO already finds the cost
 floor and all nodes share the same training trace. A
-dedicated routing experiment (T5.1) removes both constraints:
+dedicated routing experiment removes both constraints:
 two equally-priced nodes are each trained on independent
 Alibaba 2018 trace segments with divergent CPU patterns.
 With LSTM predictions active, 100\% of latency-critical jobs
-route to the lower-spike-probability node versus 30\% without
+route to the lower-load-probability node versus 30\% without
 predictions — a \textbf{$+$70\,pp} improvement that confirms
 the $r=-0.64$ calibration signal translates to concrete
 routing decisions under realistic heterogeneous load.
@@ -898,10 +865,10 @@ design space: online (no offline training), interpretable
 (pheromone vector is directly inspectable), cost-aware
 (explicit \$/hr scoring), and QoS-discriminating (workload
 intent router with per-tier strategies). Future directions
-include persisting LSTM weights across restarts, raising
-spike-recall above the 0.4 hard threshold by accumulating
-longer per-node histories, and extending evaluation to
-multi-cluster topologies with real job-arrival traces.
+include persisting LSTM weights across restarts, improving
+forecast differentiation by accumulating longer per-node
+histories, and extending evaluation to multi-cluster
+topologies with real job-arrival traces.
 
 
 % =============================================================
@@ -1033,6 +1000,5 @@ A.D., Katz, R., Shenker, S., Stoica, I.: Mesos: a platform for
 fine-grained resource sharing in the data center. In: NSDI '11,
 pp. 295--308. USENIX Association (2011)
 
-\end{thebibliography}
-
+\end{thebibliography}\]
 \end{document}
