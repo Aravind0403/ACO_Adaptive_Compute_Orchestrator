@@ -211,7 +211,7 @@ orchestrator. Instead, it acts as a predictive placement layer
 that extends default scheduling logic by incorporating
 forward-looking utilisation forecasts (LSTM) and historical
 placement preferences (pheromone trails) into a unified
-cost-aware scoring function.
+cost-aware scoring function~\cite{claude2026}.
 
 
 % =============================================================
@@ -404,7 +404,8 @@ The computational complexity of our ACO implementation is
 $O(A \cdot I \cdot N)$, where $A$ is ants, $I$ is iterations,
 and $N$ is nodes, ensuring it scales linearly with cluster
 size. Scaling the pheromone matrix to 1{,}000$+$ nodes via
-distributed state management is the primary focus of future work.
+distributed state management is the primary focus of future
+work~\cite{claude2026}.
 
 We evaluate on two distinct topologies. The \emph{balanced CPU
 topology} consists of three node classes: a mid-tier ON\_DEMAND
@@ -784,7 +785,7 @@ The LSTM predictor requires substantial per-node history to produce highly diffe
 load forecasts. In homogeneous or cold-start regimes (e.g., immediately following a process 
 restart), per-node predictions converge to similar values, limiting the router's ability to 
 differentiate nodes. Persisting model weights across restarts and evaluating pre-training 
-strategies to mitigate this cold-start phase are deferred to future work.
+strategies to mitigate this cold-start phase are deferred to future work~\cite{claude2026}.
 
 \textbf{LSTM routing impact on cost benchmarks.} The Experiment 1
 ablation (Table~\ref{tab:lstm_ablation}) shows
@@ -822,7 +823,7 @@ exercised dynamically in the current simulation. The system
 does not simulate mid-job evictions or re-scheduling on
 preemption, meaning the SPOT penalty operates as a placement
 bias rather than a verified recovery path. Dynamic preemption
-handling is deferred to future work.
+handling is deferred to future work~\cite{claude2026}.
 
 \textbf{No job-arrival trace.} Scheduling latency and queue
 drain benchmarks use synthetic Poisson arrivals rather than
@@ -872,16 +873,23 @@ topologies with real job-arrival traces.
 
 
 % =============================================================
-\subsubsection{Declaration on Generative AI.}
+\section*{Acknowledgements}
 % =============================================================
 
-The authors used Claude (Anthropic) to assist with software
+% DOUBLE-BLIND: funding and institutional acknowledgements
+% omitted per double-blind submission guidelines.
+% To be added in camera-ready version upon acceptance.
+
+\textbf{Use of AI-Assisted Text.}
+The authors used Claude (Anthropic, claude-sonnet-4-6,
+2026)~\cite{claude2026} to assist with software
 implementation, benchmark scripting, and initial drafting of
-technical descriptions. All scientific ideas, experimental
-design, result interpretation, and conclusions were formulated
-and verified by the authors. All AI-assisted text was
-critically reviewed and edited prior to submission. No
-generative AI tool is listed as an author or co-author.
+select prose passages in Sections~2, 4, 5, and~6. All
+scientific ideas, experimental design, benchmark methodology,
+result interpretation, and conclusions were formulated and
+verified by the authors. All AI-assisted text was critically
+reviewed and edited prior to submission. No generative AI
+tool is listed as an author or co-author.
 
 
 % =============================================================
@@ -999,6 +1007,11 @@ Hindman, B., Konwinski, A., Zaharia, M., Ghodsi, A., Joseph,
 A.D., Katz, R., Shenker, S., Stoica, I.: Mesos: a platform for
 fine-grained resource sharing in the data center. In: NSDI '11,
 pp. 295--308. USENIX Association (2011)
+
+\bibitem{claude2026}
+Anthropic: Claude (claude-sonnet-4-6). AI assistant used for
+language assistance in manuscript preparation.
+\url{https://www.anthropic.com/claude} (2026)
 
 \end{thebibliography}\]
 \end{document}
