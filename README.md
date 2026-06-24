@@ -16,14 +16,14 @@ ACO combines **ant colony optimization**, **LSTM-based spike prediction**, and *
 | **Cost reduction vs Random** | **79.6%** (GPU workloads, 32-node cluster) | T4.1 |
 | **GPU QoS compliance** | **97.4%** LS → ON_DEMAND (ACO+QoS mode) | T4.1 |
 | **LSTM calibration signal** | **Pearson r = −0.64** on 8-day Alibaba trace | T2.2 |
-| **LSTM routing improvement** | **+70 pp** safe-node selection for LC jobs | T5.1 |
-| **Test coverage** | **202 tests passing** | pytest |
+| **LSTM routing improvement** | **+31.5 pp** safe-node selection (32-node cluster, t=22.56, p<0.001) | T5.2 |
+| **Test coverage** | **210 tests passing** | pytest |
 | **External dependencies at runtime** | **Zero** — fully in-memory | — |
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-latest-green.svg)](https://fastapi.tiangolo.com/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2+-red.svg)](https://pytorch.org/)
-[![Tests](https://img.shields.io/badge/Tests-202%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-210%20passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -149,8 +149,8 @@ The intent router naturally directs GPU inference to `node-gpu-04` (ON_DEMAND, n
 - Architecture: `(1, 10, 1)` input → LSTM(hidden=32) → Linear(32→1)
 - Per-node model, refits every 10 telemetry ticks (~50ms refit time)
 - Cold-start handled: uses CPU average with `confidence=0.1` until ≥10 samples
-- Confidence grows linearly: 10 samples → 0.5, 500 samples → 1.0
-- **Routing benefit (T5.1):** when nodes carry divergent load histories, LSTM predictions shift safe-node selection from 30% → 100% for latency-critical jobs (+70 pp). Calibration on 8-day Alibaba trace: Pearson r = −0.64 (correct directional signal at burst onsets).
+- Confidence = 0.5×sample_score + 0.5×mae_score; cold-start floor 0.1, peaks at ~0.95 (500 samples, low MAE)
+- **Routing benefit (T5.2):** at 32-node cluster scale with independent per-node trace histories, LSTM predictions shift safe-node selection from 48.8% → 80.3% for latency-critical jobs (+31.5 pp, t=22.56, p<0.001, N=5 seeds). Calibration on 8-day Alibaba trace: Pearson r = −0.64 (correct directional signal at burst onsets).
 
 ### CostEngine — Composite Score
 
@@ -206,7 +206,7 @@ curl -X POST http://localhost:8000/jobs \
 
 ```bash
 python -m pytest tests/ -v
-# 202 passed
+# 210 passed
 ```
 
 ### Run the benchmark suite
@@ -223,7 +223,8 @@ python -m benchmarks.tier1_aco_vs_naive       # T1.1 — cost vs First-Fit
 python -m benchmarks.tier1_p99_latency        # T1.3 — latency CDF
 python -m benchmarks.tier2_confidence_calibration  # T2.2 — LSTM calibration
 python -m benchmarks.tier4_gpu_scheduling     # T4.1 — GPU QoS
-python -m benchmarks.tier5_lstm_routing_impact    # T5.1 — routing improvement
+python -m benchmarks.tier5_lstm_routing_impact    # T5.1 — routing benefit (2-node baseline)
+python -m benchmarks.tier5_lstm_routing_32nodes  # T5.2 — routing at 32-node cluster scale
 ```
 
 ---
@@ -235,14 +236,15 @@ Nine scripts across five tiers. All results reproducible from the Alibaba 2018 t
 | ID | Name | Key result |
 |----|------|------------|
 | T1.1 | ACO vs Naive (Azure VM distribution) | **28.6%** cost reduction vs First-Fit (balanced topology) |
-| T1.2 | Pheromone learning curve | **316×** pheromone spread at 50 jobs — convergence detected |
+| T1.2 | Pheromone learning curve | **316×** pheromone spread after 200 sequential jobs — convergence detected |
 | T1.3 | P99 latency under burst | **0.75 ms P99** at 200 concurrent jobs |
 | T2.1 | Spike prediction recall | Calibration signal present; recall low at threshold 0.4 (threshold-dependent) |
 | T2.2 | Confidence calibration | **Pearson r = −0.64** — correct directional signal at burst onsets |
 | T3.1 | Queue drain under saturation | Steady drain rate across burst load |
 | T3.2 | Cold vs warm pheromone start | Warm pheromone starts lower — advantage detectable within 50 jobs |
 | T4.1 | GPU scheduling (Alibaba ATC'23, 32 nodes) | **79.6%** cost reduction vs Random; **97.4%** QoS compliance |
-| T5.1 | LSTM routing under heterogeneous load | **+70 pp** safe-node selection for LC jobs with real trace inputs |
+| T5.1 | LSTM routing benefit (2-node baseline) | **+70 pp** safe-node selection for LC jobs (2-node control experiment) |
+| T5.2 | LSTM routing at 32-node cluster scale | **+31.5 pp** safe-node selection (t=22.56, p<0.001, N=5 seeds) |
 
 ---
 
@@ -305,14 +307,15 @@ benchmarks/
 ├── tier2_*.py                LSTM calibration + spike recall (T2.1–T2.2)
 ├── tier3_*.py                Queue drain + warm-start (T3.1–T3.2)
 ├── tier4_gpu_scheduling.py   GPU QoS + cost on Alibaba ATC'23 data (T4.1)
-├── tier5_lstm_routing_impact.py  LSTM routing benefit (T5.1)
+├── tier5_lstm_routing_impact.py    LSTM routing benefit — 2-node baseline (T5.1)
+├── tier5_lstm_routing_32nodes.py  LSTM routing at 32-node cluster scale (T5.2)
 ├── run_all.py                Run all 9 benchmarks, print summary table
 └── results/                  JSON result files per benchmark
 
 paper/
-└── aco_scheduler_ftc2026.tex FTC 2026 paper (Springer LNNS)
+└── aco_scheduler_ftc2026.tex HiPC 2026 paper (IEEE, Track 2: AI Systems and Applications)
 
-tests/                        202 tests (pytest-asyncio)
+tests/                        210 tests (pytest-asyncio)
 tests/fixtures/               Alibaba 2018 trace CSV (alibaba_machine_usage_300s.csv)
 ```
 
@@ -320,10 +323,10 @@ tests/fixtures/               Alibaba 2018 trace CSV (alibaba_machine_usage_300s
 
 ## Paper
 
-This system is the subject of a paper submitted to FTC 2026 (Future Technologies Conference), Springer LNNS series:
+This system is the subject of a paper submitted to HiPC 2026 (IEEE International Conference on High Performance Computing), Track 2: AI Systems and Applications:
 
 > **"ACO Adaptive Compute Scheduler: Predictive, Intent-Aware Job Placement for Heterogeneous Compute Clusters"**  
-> Aravind Sundaresan. *FTC 2026 Late Breaking Research Track.*  
+> Aravind Sundaresan. *HiPC 2026, Track 2: AI Systems and Applications.*  
 > Source: `paper/aco_scheduler_ftc2026.tex`
 
 For deep technical detail on system design, algorithms, and evaluation methodology, see the paper. The `TECHNICAL.md` in this repo is an earlier supplementary reference.
